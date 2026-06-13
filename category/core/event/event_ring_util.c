@@ -14,6 +14,7 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <errno.h>
+#include <limits.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -21,11 +22,16 @@
 #include <string.h>
 
 #include <fcntl.h>
-#include <sys/file.h>
-#include <sys/mman.h>
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <unistd.h>
+
+#ifdef _WIN32
+    #include <category/core/compat.h>
+#else
+    #include <sys/file.h>
+    #include <sys/mman.h>
+#endif
 
 #include <zstd.h>
 
@@ -33,7 +39,7 @@
 
 #if __has_include(<linux/limits.h>)
     #include <linux/limits.h> // NOLINT(misc-include-cleaner)
-#else
+#elif !defined(PATH_MAX)
     #define PATH_MAX 4096
 #endif
 
@@ -130,7 +136,9 @@ static int decompress_snapshot(
         uint8_t const *write_buf = zbuf_out.dst;
         size_t residual = zbuf_out.pos;
         while (residual > 0) {
-            ssize_t const n_write = write(decompfd, write_buf, residual);
+            unsigned int const write_size =
+                residual < UINT_MAX ? (unsigned int)residual : UINT_MAX;
+            ssize_t const n_write = write(decompfd, write_buf, write_size);
             if (n_write == -1) {
                 return FORMAT_ERRC(
                     errno,
@@ -266,7 +274,7 @@ int monad_event_ring_init_simple(
     if (rc != 0) {
         return FORMAT_ERRC(
             rc,
-            "posix_fallocate failed for event ring file `%s`, size %lu",
+            "posix_fallocate failed for event ring file `%s`, size %zu",
             error_name,
             ring_bytes);
     }

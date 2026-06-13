@@ -29,7 +29,7 @@ using hash256 = ethash::hash256;
 inline hash256 keccak256(byte_string_view const bytes)
 {
     hash256 hash;
-    keccak256(bytes.data(), bytes.size(), hash.bytes);
+    keccak256(bytes.data(), static_cast<unsigned long>(bytes.size()), hash.bytes);
     return hash;
 }
 

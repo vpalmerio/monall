@@ -26,8 +26,11 @@
 //  C header is included by C++ translation units
 #ifdef __cplusplus
     #include <bit>
-#else
+#elif __has_include(<stdbit.h>)
     #include <stdbit.h>
+#else
+    // C23 <stdbit.h> is not yet available in mingw-w64's GCC headers
+    #define stdc_has_single_bit(x) ((x) != 0 && (((x) & ((x) - 1)) == 0))
 #endif
 
 #include <stddef.h>

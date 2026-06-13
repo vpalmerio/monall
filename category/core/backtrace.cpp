@@ -108,7 +108,7 @@ struct stack_backtrace_impl final : public stack_backtrace
         memset(indent_buffer, ' ', 64);
         indent_buffer[indent] = 0;
         auto write = [&](char const *fmt,
-                         ...) __attribute__((format(printf, 2, 3))) {
+                         ...) __attribute__((format(gnu_printf, 2, 3))) {
             va_list args;
             va_start(args, fmt);
             char buffer[1024];
@@ -118,7 +118,7 @@ struct stack_backtrace_impl final : public stack_backtrace
             auto const written = std::min(
                 size_t(::vsnprintf(buffer, sizeof(buffer), fmt, args)),
                 sizeof(buffer));
-            if (-1 == ::write(fd, buffer, written)) {
+            if (-1 == ::write(fd, buffer, static_cast<unsigned>(written))) {
                 abort();
             }
             va_end(args);

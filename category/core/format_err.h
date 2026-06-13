@@ -83,7 +83,7 @@ int monad_vformat_err(
     char *err_buf, size_t err_buf_size, monad_source_location_t const *,
     int err, char const *format, va_list ap);
 
-__attribute__((format(printf, 5, 6))) static inline int monad_format_err(
+__attribute__((format(gnu_printf, 5, 6))) static inline int monad_format_err(
     char *const err_buf, size_t const err_buf_size,
     monad_source_location_t const *const src, int const err,
     char const *const format, ...)

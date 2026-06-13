@@ -195,14 +195,19 @@ if(${CMAKE_SYSTEM_NAME} MATCHES "Linux")
             # procfs
             "procfs/statm.c"
             "procfs/statm.h")
+else()
+  target_sources(monad_core PRIVATE "event/event_ring_util_posix.c")
 endif()
 
 target_include_directories(monad_core PRIVATE "${THIRD_PARTY_DIR}/openssl")
-if(${CMAKE_SYSTEM_PROCESSOR} MATCHES "x86_64")
+if(${CMAKE_SYSTEM_PROCESSOR} MATCHES "x86_64|AMD64" AND NOT WIN32)
   target_sources(monad_core PRIVATE "keccak_impl.S")
 else()
+  # The hand-written keccak1600 assembly uses ELF-specific GAS directives
+  # (e.g. `.type foo,@function`) that mingw's COFF assembler rejects, so use
+  # the portable C implementation on Windows.
   target_sources(monad_core
-                 PRIVATE "third_party/openssl/crypto/sha/keccak1600.c")
+                 PRIVATE "${THIRD_PARTY_DIR}/openssl/crypto/sha/keccak1600.c")
 endif()
 
 monad_compile_options(monad_core)

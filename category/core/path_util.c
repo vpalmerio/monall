@@ -23,6 +23,7 @@
 #include <unistd.h>
 
 #include <category/core/cleanup.h> // NOLINT(misc-include-cleaner)
+#include <category/core/compat.h>
 #include <category/core/path_util.h>
 
 // Silence clang-tidy complaining about trying to close AT_FDCWD
@@ -61,6 +62,134 @@ int monad_path_append(
     *size -= n;
     return 0;
 }
+
+#ifdef _WIN32
+
+// Windows has no dirfd-relative `*at` family of system calls, so instead of
+// walking the path one directory-fd-relative component at a time, we build
+// up an absolute path string (`curpath`) alongside `pathbuf` and use it with
+// ordinary path-based Win32/CRT calls; each component is still validated and
+// (optionally) created one at a time, preserving the property that `pathbuf`
+// only ever contains path components that were successfully translated.
+int monad_path_open_subdir(
+    int const init_dirfd, char const *const path_suffix, mode_t const mode,
+    int *const final_dirfd, char *pathbuf, size_t pathbuf_size)
+{
+    char *dir_name;
+    char *tokctx;
+    int curfd = -1;
+    int rc = 0;
+    bool const can_create_dirs = (mode & (S_IRWXU | S_IRWXG | S_IRWXO)) != 0;
+    char curpath[4096];
+    size_t curpath_len;
+
+    if (pathbuf != nullptr) {
+        *pathbuf = '\0';
+    }
+    if (final_dirfd != nullptr) {
+        *final_dirfd = -1;
+    }
+    if (path_suffix == nullptr) {
+        if (final_dirfd != nullptr) {
+            *final_dirfd = init_dirfd;
+        }
+        return 0;
+    }
+
+    if (init_dirfd == AT_FDCWD) {
+        curpath_len = 0;
+        if (*path_suffix == '/') {
+            curpath[0] = '/';
+            curpath_len = 1;
+        }
+        curpath[curpath_len] = '\0';
+    }
+    else {
+        HANDLE const h = (HANDLE)_get_osfhandle(init_dirfd);
+        if (h == INVALID_HANDLE_VALUE) {
+            return EBADF;
+        }
+        DWORD const n = GetFinalPathNameByHandleA(
+            h, curpath, sizeof curpath, FILE_NAME_NORMALIZED | VOLUME_NAME_DOS);
+        if (n == 0 || n >= sizeof curpath) {
+            return EIO;
+        }
+        curpath_len = n;
+        // Strip the `\\?\` extended-length prefix so that the path remains
+        // palatable to the CRT's _mkdir()
+        if (curpath_len >= 4 && memcmp(curpath, "\\\\?\\", 4) == 0) {
+            memmove(curpath, curpath + 4, curpath_len - 4 + 1);
+            curpath_len -= 4;
+        }
+    }
+
+    // NOLINTBEGIN(clang-analyzer-unix.Malloc)
+    char *const path_components [[gnu::cleanup(cleanup_free)]] =
+        strdup(path_suffix);
+    if (path_components == nullptr) {
+        return errno;
+    }
+    for (dir_name = strtok_r(path_components, "/", &tokctx); dir_name;
+         dir_name = strtok_r(nullptr, "/", &tokctx)) {
+        size_t const name_len = strlen(dir_name);
+
+        if (pathbuf != nullptr) {
+            rc = monad_path_append(&pathbuf, dir_name, &pathbuf_size);
+            if (rc != 0) {
+                goto Done;
+            }
+        }
+        if (curpath_len + 1 + name_len >= sizeof curpath) {
+            rc = ENAMETOOLONG;
+            goto Done;
+        }
+        curpath[curpath_len++] = '/';
+        memcpy(curpath + curpath_len, dir_name, name_len);
+        curpath_len += name_len;
+        curpath[curpath_len] = '\0';
+
+        if (can_create_dirs && _mkdir(curpath) == -1 && errno != EEXIST) {
+            rc = errno;
+            goto Done;
+        }
+        HANDLE const dirh = CreateFileA(
+            curpath,
+            GENERIC_READ,
+            FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+            nullptr,
+            OPEN_EXISTING,
+            FILE_FLAG_BACKUP_SEMANTICS,
+            nullptr);
+        if (dirh == INVALID_HANDLE_VALUE) {
+            DWORD const err = GetLastError();
+            rc = (err == ERROR_FILE_NOT_FOUND || err == ERROR_PATH_NOT_FOUND)
+                     ? ENOENT
+                 : (err == ERROR_ACCESS_DENIED) ? EACCES
+                                                 : EIO;
+            goto Done;
+        }
+        int const nextfd = _open_osfhandle((intptr_t)dirh, _O_RDONLY);
+        if (nextfd == -1) {
+            rc = errno;
+            CloseHandle(dirh);
+            goto Done;
+        }
+        tidy_close(curfd);
+        curfd = nextfd;
+    }
+
+Done:
+    if (final_dirfd != nullptr && rc == 0) {
+        *final_dirfd = curfd;
+    }
+    else {
+        tidy_close(curfd);
+    }
+    return rc;
+    // NOLINTEND(clang-analyzer-unix.Malloc)
+}
+
+#else
 
 int monad_path_open_subdir(
     int const init_dirfd, char const *const path_suffix, mode_t const mode,
@@ -176,3 +305,5 @@ Done:
     return rc;
     // NOLINTEND(clang-analyzer-unix.Malloc)
 }
+
+#endif // _WIN32

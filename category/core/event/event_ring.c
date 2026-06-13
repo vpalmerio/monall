@@ -14,16 +14,27 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <errno.h>
-#include <stdbit.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
 
 #include <fcntl.h>
-#include <sys/mman.h>
 #include <sys/stat.h>
 #include <unistd.h>
+
+#if __has_include(<stdbit.h>)
+    #include <stdbit.h>
+#else
+    // C23 <stdbit.h> is not yet available in mingw-w64's GCC headers
+    #define stdc_has_single_bit(x) ((x) != 0 && (((x) & ((x) - 1)) == 0))
+#endif
+
+#ifdef _WIN32
+    #include <category/core/compat.h>
+#else
+    #include <sys/mman.h>
+#endif
 
 #include <category/core/event/event_iterator.h>
 #include <category/core/event/event_recorder.h>
@@ -33,6 +44,47 @@
 
 thread_local char _g_monad_event_ring_error_buf[1024];
 static size_t const PAGE_2MB = 1UL << 21, HEADER_SIZE = PAGE_2MB;
+
+#ifdef _WIN32
+
+// VirtualAlloc2/MapViewOfFile3/UnmapViewOfFile2 implement the "placeholder
+// VA" APIs (Windows 10 1803+) that this file uses to emulate the POSIX
+// MAP_FIXED "wraparound" double-mapping trick for the payload buffer.
+// mingw-w64's headers declare these (gated on NTDDI_VERSION >=
+// NTDDI_WIN10_RS4), but its import libraries do not yet export them, so we
+// resolve them dynamically from kernelbase.dll at runtime.
+typedef PVOID(WINAPI *VirtualAlloc2_fn)(
+    HANDLE, PVOID, SIZE_T, ULONG, ULONG, MEM_EXTENDED_PARAMETER *, ULONG);
+typedef PVOID(WINAPI *MapViewOfFile3_fn)(
+    HANDLE, HANDLE, PVOID, ULONG64, SIZE_T, ULONG, ULONG,
+    MEM_EXTENDED_PARAMETER *, ULONG);
+typedef WINBOOL(WINAPI *UnmapViewOfFile2_fn)(HANDLE, PVOID, ULONG);
+
+static VirtualAlloc2_fn g_VirtualAlloc2;
+static MapViewOfFile3_fn g_MapViewOfFile3;
+static UnmapViewOfFile2_fn g_UnmapViewOfFile2;
+
+// Resolve the placeholder-VA APIs on first use; returns false if the running
+// version of Windows does not provide them (pre-1803)
+static bool resolve_placeholder_va_apis()
+{
+    if (g_VirtualAlloc2 && g_MapViewOfFile3 && g_UnmapViewOfFile2) {
+        return true;
+    }
+    HMODULE const kernelbase = GetModuleHandleA("kernelbase.dll");
+    if (kernelbase == nullptr) {
+        return false;
+    }
+    g_VirtualAlloc2 =
+        (VirtualAlloc2_fn)(void *)GetProcAddress(kernelbase, "VirtualAlloc2");
+    g_MapViewOfFile3 = (MapViewOfFile3_fn)(void *)GetProcAddress(
+        kernelbase, "MapViewOfFile3");
+    g_UnmapViewOfFile2 = (UnmapViewOfFile2_fn)(void *)GetProcAddress(
+        kernelbase, "UnmapViewOfFile2");
+    return g_VirtualAlloc2 && g_MapViewOfFile3 && g_UnmapViewOfFile2;
+}
+
+#endif // _WIN32
 
 #define FORMAT_ERRC(...)                                                       \
     monad_format_err(                                                          \
@@ -57,27 +109,27 @@ int monad_event_ring_init_size(
         return FORMAT_ERRC(
             ERANGE,
             "descriptors_shift %hhu outside allowed range [%hhu, %hhu]: "
-            "(ring sizes: [%lu, %lu])",
+            "(ring sizes: [%zu, %zu])",
             descriptors_shift,
             MONAD_EVENT_MIN_DESCRIPTORS_SHIFT,
             MONAD_EVENT_MAX_DESCRIPTORS_SHIFT,
-            (1UL << MONAD_EVENT_MIN_DESCRIPTORS_SHIFT),
-            (1UL << MONAD_EVENT_MAX_DESCRIPTORS_SHIFT));
+            ((size_t)1 << MONAD_EVENT_MIN_DESCRIPTORS_SHIFT),
+            ((size_t)1 << MONAD_EVENT_MAX_DESCRIPTORS_SHIFT));
     }
     if (payload_buf_shift < MONAD_EVENT_MIN_PAYLOAD_BUF_SHIFT ||
         payload_buf_shift > MONAD_EVENT_MAX_PAYLOAD_BUF_SHIFT) {
         return FORMAT_ERRC(
             ERANGE,
             "payload_buf_shift %hhu outside allowed range [%hhu, %hhu]: "
-            "(buffer sizes: [%lu, %lu])",
+            "(buffer sizes: [%zu, %zu])",
             payload_buf_shift,
             MONAD_EVENT_MIN_PAYLOAD_BUF_SHIFT,
             MONAD_EVENT_MAX_PAYLOAD_BUF_SHIFT,
-            (1UL << MONAD_EVENT_MIN_PAYLOAD_BUF_SHIFT),
-            (1UL << MONAD_EVENT_MAX_PAYLOAD_BUF_SHIFT));
+            ((size_t)1 << MONAD_EVENT_MIN_PAYLOAD_BUF_SHIFT),
+            ((size_t)1 << MONAD_EVENT_MAX_PAYLOAD_BUF_SHIFT));
     }
-    size->descriptor_capacity = 1UL << descriptors_shift;
-    size->payload_buf_size = 1UL << payload_buf_shift;
+    size->descriptor_capacity = (size_t)1 << descriptors_shift;
+    size->payload_buf_size = (size_t)1 << payload_buf_shift;
     size->context_area_size = PAGE_2MB * context_large_pages;
     return 0;
 }
@@ -124,24 +176,24 @@ int monad_event_ring_init_file(
     // via a call to monad_event_ring_init_size
     if (!stdc_has_single_bit(ring_size->descriptor_capacity) ||
         ring_size->descriptor_capacity <
-            (1UL << MONAD_EVENT_MIN_DESCRIPTORS_SHIFT) ||
+            ((size_t)1 << MONAD_EVENT_MIN_DESCRIPTORS_SHIFT) ||
         ring_size->descriptor_capacity >
-            (1UL << MONAD_EVENT_MAX_DESCRIPTORS_SHIFT)) {
+            ((size_t)1 << MONAD_EVENT_MAX_DESCRIPTORS_SHIFT)) {
         return FORMAT_ERRC(
             EINVAL,
-            "event ring file `%s` descriptor size %lu is invalid; use "
+            "event ring file `%s` descriptor size %zu is invalid; use "
             "monad_event_ring_init_size",
             error_name,
             ring_size->descriptor_capacity);
     }
     if (!stdc_has_single_bit(ring_size->payload_buf_size) ||
         ring_size->payload_buf_size <
-            (1UL << MONAD_EVENT_MIN_PAYLOAD_BUF_SHIFT) ||
+            ((size_t)1 << MONAD_EVENT_MIN_PAYLOAD_BUF_SHIFT) ||
         ring_size->payload_buf_size >
-            (1UL << MONAD_EVENT_MAX_PAYLOAD_BUF_SHIFT)) {
+            ((size_t)1 << MONAD_EVENT_MAX_PAYLOAD_BUF_SHIFT)) {
         return FORMAT_ERRC(
             EINVAL,
-            "event ring file `%s` descriptor size %lu is invalid; use "
+            "event ring file `%s` descriptor size %zu is invalid; use "
             "monad_event_ring_init_size",
             error_name,
             ring_size->payload_buf_size);
@@ -150,7 +202,7 @@ int monad_event_ring_init_file(
         !stdc_has_single_bit(ring_size->context_area_size)) {
         return FORMAT_ERRC(
             EINVAL,
-            "event ring file `%s` context area size %lu is invalid",
+            "event ring file `%s` context area size %zu is invalid",
             error_name,
             ring_size->context_area_size);
     }
@@ -181,7 +233,7 @@ int monad_event_ring_init_file(
     if (ring_offset + (off_t)ring_bytes > ring_stat.st_size) {
         return FORMAT_ERRC(
             ENOSPC,
-            "event ring file `%s` cannot hold total event ring size %lu",
+            "event ring file `%s` cannot hold total event ring size %zu",
             error_name,
             ring_bytes);
     }
@@ -275,6 +327,131 @@ int monad_event_ring_mmap(
     // single anonymous mapping whose size is twice the size of the payload
     // buffer, so we can do the "wrap around" trick. We'll remap the actual
     // payload buffer fd into this reserved range later, using MAP_FIXED.
+#ifdef _WIN32
+    // On Windows we reproduce the same "wrap around" layout using the
+    // placeholder VA APIs (Windows 10 1803+): reserve 2x payload_size, split
+    // it into two placeholders, then replace each placeholder with a view of
+    // the same file region via MapViewOfFile3/MEM_REPLACE_PLACEHOLDER.
+    {
+        size_t const payload_size = header->size.payload_buf_size;
+        off_t const payload_offset =
+            base_ring_data_offset + (off_t)descriptor_map_len;
+        DWORD const payload_protect =
+            (mmap_prot & PROT_WRITE) ? PAGE_READWRITE : PAGE_READONLY;
+        HANDLE payload_file_mapping;
+        HANDLE const ring_file = (HANDLE)_get_osfhandle(ring_fd);
+
+        if (!resolve_placeholder_va_apis()) {
+            rc = FORMAT_ERRC(
+                ENOSYS,
+                "event ring file `%s`: this version of Windows does not "
+                "provide the placeholder VA APIs (VirtualAlloc2/"
+                "MapViewOfFile3) needed to map the payload buffer",
+                error_name);
+            goto Error;
+        }
+        if (ring_file == INVALID_HANDLE_VALUE) {
+            rc = FORMAT_ERRC(
+                EBADF,
+                "event ring file `%s` does not have a valid Win32 handle",
+                error_name);
+            goto Error;
+        }
+        payload_file_mapping = CreateFileMappingA(
+            ring_file, nullptr, payload_protect, 0, 0, nullptr);
+        if (payload_file_mapping == nullptr) {
+            rc = FORMAT_ERRC(
+                EACCES,
+                "CreateFileMapping for event ring file `%s` payload buffer "
+                "failed",
+                error_name);
+            goto Error;
+        }
+        event_ring->payload_buf = g_VirtualAlloc2(
+            nullptr,
+            nullptr,
+            2 * payload_size,
+            MEM_RESERVE | MEM_RESERVE_PLACEHOLDER,
+            PAGE_NOACCESS,
+            nullptr,
+            0);
+        if (event_ring->payload_buf == nullptr) {
+            CloseHandle(payload_file_mapping);
+            rc = FORMAT_ERRC(
+                ENOMEM,
+                "VirtualAlloc2 reservation for event ring file `%s` payload "
+                "buffer failed",
+                error_name);
+            goto Error;
+        }
+        if (!VirtualFree(
+                event_ring->payload_buf,
+                payload_size,
+                MEM_RELEASE | MEM_PRESERVE_PLACEHOLDER)) {
+            VirtualFree(event_ring->payload_buf, 0, MEM_RELEASE);
+            event_ring->payload_buf = nullptr;
+            CloseHandle(payload_file_mapping);
+            rc = FORMAT_ERRC(
+                ENOMEM,
+                "splitting placeholder VA region for event ring file `%s` "
+                "payload buffer failed",
+                error_name);
+            goto Error;
+        }
+        if (g_MapViewOfFile3(
+                payload_file_mapping,
+                nullptr,
+                event_ring->payload_buf,
+                (ULONG64)payload_offset,
+                payload_size,
+                MEM_REPLACE_PLACEHOLDER,
+                payload_protect,
+                nullptr,
+                0) == nullptr) {
+            VirtualFree(event_ring->payload_buf, 0, MEM_RELEASE);
+            VirtualFree(event_ring->payload_buf + payload_size, 0, MEM_RELEASE);
+            rc = FORMAT_ERRC(
+                EACCES,
+                "MapViewOfFile3 of event ring file `%s` payload buffer to %p "
+                "failed",
+                error_name,
+                event_ring->payload_buf);
+            event_ring->payload_buf = nullptr;
+            CloseHandle(payload_file_mapping);
+            goto Error;
+        }
+        if (g_MapViewOfFile3(
+                payload_file_mapping,
+                nullptr,
+                event_ring->payload_buf + payload_size,
+                (ULONG64)payload_offset,
+                payload_size,
+                MEM_REPLACE_PLACEHOLDER,
+                payload_protect,
+                nullptr,
+                0) == nullptr) {
+            g_UnmapViewOfFile2(
+                GetCurrentProcess(),
+                event_ring->payload_buf,
+                MEM_PRESERVE_PLACEHOLDER);
+            VirtualFree(event_ring->payload_buf, 0, MEM_RELEASE);
+            VirtualFree(event_ring->payload_buf + payload_size, 0, MEM_RELEASE);
+            rc = FORMAT_ERRC(
+                EACCES,
+                "MapViewOfFile3 of event ring file `%s` payload buffer "
+                "wrap-around pages at %p failed",
+                error_name,
+                event_ring->payload_buf + payload_size);
+            event_ring->payload_buf = nullptr;
+            CloseHandle(payload_file_mapping);
+            goto Error;
+        }
+
+        // The views maintain their own reference to the section object, so
+        // the file mapping handle is no longer needed
+        CloseHandle(payload_file_mapping);
+    }
+#else
     event_ring->payload_buf = mmap(
         nullptr,
         2 * header->size.payload_buf_size,
@@ -328,6 +505,7 @@ int monad_event_ring_mmap(
             event_ring->payload_buf + header->size.payload_buf_size);
         goto Error;
     }
+#endif // _WIN32
 
     if (header->size.context_area_size > 0) {
         event_ring->context_area = mmap(
@@ -365,7 +543,25 @@ void monad_event_ring_unmap(struct monad_event_ring *const event_ring)
                     sizeof(struct monad_event_descriptor));
         }
         if (event_ring->payload_buf) {
+#ifdef _WIN32
+            size_t const payload_size = header->size.payload_buf_size;
+            // resolve_placeholder_va_apis() must succeed here, since it
+            // already succeeded when this payload_buf was mapped
+            if (resolve_placeholder_va_apis()) {
+                g_UnmapViewOfFile2(
+                    GetCurrentProcess(),
+                    event_ring->payload_buf,
+                    MEM_PRESERVE_PLACEHOLDER);
+                g_UnmapViewOfFile2(
+                    GetCurrentProcess(),
+                    event_ring->payload_buf + payload_size,
+                    MEM_PRESERVE_PLACEHOLDER);
+            }
+            VirtualFree(event_ring->payload_buf, 0, MEM_RELEASE);
+            VirtualFree(event_ring->payload_buf + payload_size, 0, MEM_RELEASE);
+#else
             munmap(event_ring->payload_buf, 2 * header->size.payload_buf_size);
+#endif
         }
         if (event_ring->context_area) {
             munmap(event_ring->context_area, header->size.context_area_size);

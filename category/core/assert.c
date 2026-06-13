@@ -14,6 +14,7 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <category/core/assert.h>
+#include <category/core/compat.h>
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -72,7 +73,7 @@ void monad_assertion_failed(
         }
     }
     // abort() is async signal safe in glibc
-    if (write(STDERR_FILENO, buffer, (size_t)written) == -1) {
+    if (write(STDERR_FILENO, buffer, (unsigned)written) == -1) {
         abort(); // Needed because of -Werror=unused-result
     }
     abort();

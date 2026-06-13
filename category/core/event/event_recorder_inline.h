@@ -24,7 +24,9 @@
     #error This file should only be included directly by event_recorder.h
 #endif
 
-#include <stdbit.h>
+#if __has_include(<stdbit.h>)
+    #include <stdbit.h>
+#endif
 #include <stddef.h>
 #include <stdint.h>
 #include <string.h>

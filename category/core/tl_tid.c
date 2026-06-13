@@ -15,13 +15,21 @@
 
 #include <category/core/tl_tid.h>
 
-#include <unistd.h>
+#ifdef _WIN32
+    #include <windows.h>
+#else
+    #include <unistd.h>
 
 static_assert(__builtin_types_compatible_p(pid_t, int));
+#endif
 
 __thread int tl_tid = 0;
 
 void init_tl_tid()
 {
+#ifdef _WIN32
+    tl_tid = (int)GetCurrentThreadId();
+#else
     tl_tid = gettid();
+#endif
 }
