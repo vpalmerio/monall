@@ -21,7 +21,9 @@
 #include <category/core/runtime/non_temporal_memory.hpp>
 #include <category/core/runtime/uint256.hpp>
 #include <category/vm/evm/traits.hpp>
+#include <category/vm/runtime/abi.hpp>
 #include <category/vm/runtime/bin.hpp>
+#include <category/vm/runtime/cached_allocator.hpp>
 #include <category/vm/runtime/exit.hpp>
 #include <category/vm/runtime/transmute.hpp>
 
@@ -205,7 +207,7 @@ namespace monad::vm::runtime
             }
             else {
                 non_temporal_bzero(parent_handle, parent_capacity);
-                std::free(data_handle);
+                detail::cached_aligned_free(data_handle);
             }
         }
 
@@ -219,7 +221,7 @@ namespace monad::vm::runtime
                 // handle in this case. This is because if the data_handle
                 // is the initial memory handle, then it is necessarily also
                 // the parent_handle.
-                std::free(data_handle);
+                detail::cached_aligned_free(data_handle);
             }
         }
     };
@@ -440,13 +442,13 @@ namespace monad::vm::runtime
 
 }
 
-extern "C" void monad_vm_runtime_increase_capacity(
+extern "C" void MONAD_VM_SYSV_ABI monad_vm_runtime_increase_capacity(
     monad::vm::runtime::Context *, uint32_t old_size,
     monad::vm::runtime::Bin<30> new_size);
 
-extern "C" void monad_vm_runtime_increase_memory_v1(
+extern "C" void MONAD_VM_SYSV_ABI monad_vm_runtime_increase_memory_v1(
     monad::vm::runtime::Bin<29> min_size, monad::vm::runtime::Context *);
-extern "C" void monad_vm_runtime_increase_memory_mip3(
+extern "C" void MONAD_VM_SYSV_ABI monad_vm_runtime_increase_memory_mip3(
     monad::vm::runtime::Bin<29> min_size, monad::vm::runtime::Context *);
 
 // Note: monad_vm_runtime_increase_memory_raw_* uses non-standard

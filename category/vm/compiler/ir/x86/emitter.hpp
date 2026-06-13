@@ -21,6 +21,7 @@
 #include <category/vm/evm/opcodes.hpp>
 #include <category/vm/evm/traits.hpp>
 #include <category/vm/interpreter/intercode.hpp>
+#include <category/vm/runtime/abi.hpp>
 #include <category/vm/runtime/detail.hpp>
 #include <category/vm/runtime/types.hpp>
 
@@ -156,6 +157,29 @@ namespace monad::vm::compiler::native
             {
             }
 
+#ifdef _WIN32
+            // On Windows, MONAD_VM_SYSV_ABI function pointers (e.g.
+            // runtime::mul, monad_vm_runtime_mul_192) are a distinct type
+            // from the default Microsoft x64 ABI used above.
+            template <typename... Args>
+            RuntimeImpl(
+                Emitter *e, int64_t remaining_base_gas, bool spill_avx,
+                void(MONAD_VM_SYSV_ABI *f)(Args...))
+                : em_{e}
+                , remaining_base_gas_{remaining_base_gas}
+                , spill_avx_{spill_avx}
+                , runtime_fun_{reinterpret_cast<void *>(f)}
+                , arg_count_{sizeof...(Args)}
+                , context_arg_{runtime::detail::context_arg_t<
+                      Args...>::context_arg}
+                , result_arg_{runtime::detail::result_arg_t<
+                      Args...>::result_arg}
+                , remaining_gas_arg_{runtime::detail::remaining_gas_arg_t<
+                      Args...>::remaining_gas_arg}
+            {
+            }
+#endif
+
             RuntimeImpl &pass(StackElemRef &&);
 
             void call_impl();
@@ -198,6 +222,22 @@ namespace monad::vm::compiler::native
                 : Runtime(e, 0, spill_avx, f)
             {
             }
+
+#ifdef _WIN32
+            Runtime(
+                Emitter *const e, int64_t const remaining_base_gas,
+                bool const spill_avx, void(MONAD_VM_SYSV_ABI *f)(Args...))
+                : RuntimeImpl(e, remaining_base_gas, spill_avx, f)
+            {
+            }
+
+            Runtime(
+                Emitter *const e, bool const spill_avx,
+                void(MONAD_VM_SYSV_ABI *f)(Args...))
+                : Runtime(e, 0, spill_avx, f)
+            {
+            }
+#endif
 
             void call()
             {
@@ -566,6 +606,16 @@ namespace monad::vm::compiler::native
         {
             Runtime<Args...>(this, remaining_base_gas, spill_avx, f).call();
         }
+
+#ifdef _WIN32
+        template <typename... Args>
+        void call_runtime(
+            int64_t remaining_base_gas, bool spill_avx,
+            void(MONAD_VM_SYSV_ABI *f)(Args...))
+        {
+            Runtime<Args...>(this, remaining_base_gas, spill_avx, f).call();
+        }
+#endif
 
         // Terminators invalidate emitter until `begin_new_block` is called.
         void jump();

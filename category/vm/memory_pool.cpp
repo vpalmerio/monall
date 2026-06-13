@@ -21,6 +21,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <mutex>
+#include <new>
 #include <unordered_set>
 
 namespace monad::vm
@@ -39,7 +40,7 @@ namespace monad::vm
         while (n != &empty_head_) {
             auto *const t = n;
             n = n->next;
-            std::free(t);
+            ::operator delete(t, std::align_val_t{32});
         }
     }
 
@@ -53,7 +54,8 @@ namespace monad::vm
         }
 
         if (old_head == &empty_head_) {
-            void *const p = std::aligned_alloc(32, alloc_capacity_);
+            void *const p =
+                ::operator new(alloc_capacity_, std::align_val_t{32}, std::nothrow);
             MONAD_ASSERT(p);
             runtime::non_temporal_bzero(p, alloc_capacity_);
             return reinterpret_cast<uint8_t *>(p);

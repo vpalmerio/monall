@@ -13,10 +13,11 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+#include <category/vm/runtime/abi.hpp>
 #include <category/vm/runtime/exit.hpp>
 #include <category/vm/runtime/types.hpp>
 
-extern "C" void monad_vm_runtime_context_out_of_gas_exit
+extern "C" void MONAD_VM_SYSV_ABI monad_vm_runtime_context_out_of_gas_exit
     [[noreturn]] (monad::vm::runtime::Context *const ctx)
 {
     ctx->result.status = monad::vm::runtime::StatusCode::OutOfGas;

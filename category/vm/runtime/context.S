@@ -36,7 +36,9 @@
 // Like `runtime::expand_memory`, but no `memory.size < *min_size` check:
 .text
 .globl monad_vm_runtime_increase_memory_raw_v1
+#ifdef __ELF__
 .type monad_vm_runtime_increase_memory_raw_v1, @function
+#endif
 .align 16
 monad_vm_runtime_increase_memory_raw_v1:
 // Arguments:
@@ -91,7 +93,9 @@ monad_vm_runtime_increase_memory_raw_v1:
 // Like `monad_vm_runtime_increase_memory_raw_v1`, but with MIP-3 max
 // memory check and MIP-3 expansion cost:
 .globl monad_vm_runtime_increase_memory_raw_mip3
+#ifdef __ELF__
 .type monad_vm_runtime_increase_memory_raw_mip3, @function
+#endif
 .align 16
 monad_vm_runtime_increase_memory_raw_mip3:
 // Arguments:
@@ -197,11 +201,15 @@ monad_vm_runtime_increase_memory_raw_mip3:
     vzeroupper
     jmp monad_vm_runtime_context_out_of_gas_exit
 
+#ifdef __ELF__
 .size monad_vm_runtime_increase_memory_raw_v1, .-monad_vm_runtime_increase_memory_raw_v1
 .size monad_vm_runtime_increase_memory_raw_mip3, .-monad_vm_runtime_increase_memory_raw_mip3
+#endif
 
 .globl monad_vm_runtime_increase_memory_v1
+#ifdef __ELF__
 .type monad_vm_runtime_increase_memory_v1, @function
+#endif
 .align 16
 monad_vm_runtime_increase_memory_v1:
 // Arguments:
@@ -219,10 +227,14 @@ mov rbx, rsi
 call monad_vm_runtime_increase_memory_raw_v1
 pop rbx
 ret
+#ifdef __ELF__
 .size monad_vm_runtime_increase_memory_v1, .-monad_vm_runtime_increase_memory_v1
+#endif
 
 .globl monad_vm_runtime_increase_memory_mip3
+#ifdef __ELF__
 .type monad_vm_runtime_increase_memory_mip3, @function
+#endif
 .align 16
 monad_vm_runtime_increase_memory_mip3:
 // Arguments:
@@ -240,6 +252,8 @@ mov rbx, rsi
 call monad_vm_runtime_increase_memory_raw_mip3
 pop rbx
 ret
+#ifdef __ELF__
 .size monad_vm_runtime_increase_memory_mip3, .-monad_vm_runtime_increase_memory_mip3
 
 .section .note.GNU-stack,"",@progbits
+#endif

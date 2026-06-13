@@ -43,7 +43,7 @@ static_assert(sizeof(Bin<31>) == sizeof(uint32_t));
 static_assert(alignof(Bin<31>) == alignof(uint32_t));
 static_assert(std::is_standard_layout_v<Bin<31>>);
 
-extern "C" void monad_vm_runtime_increase_capacity(
+extern "C" void MONAD_VM_SYSV_ABI monad_vm_runtime_increase_capacity(
     Context *const ctx, uint32_t const old_size, Bin<30> const new_size)
 {
     MONAD_DEBUG_ASSERT((*new_size & 31) == 0);
@@ -61,8 +61,8 @@ extern "C" void monad_vm_runtime_increase_capacity(
 
     MONAD_DEBUG_ASSERT((*new_total_capacity & 31) == 0);
 
-    auto *const new_handle =
-        static_cast<uint8_t *>(std::aligned_alloc(32, *new_total_capacity));
+    auto *const new_handle = static_cast<uint8_t *>(
+        detail::cached_aligned_alloc(32, *new_total_capacity));
     MONAD_ASSERT(new_handle);
 
     non_temporal_memcpy(new_handle, ctx->memory.data_handle, *old_total_size);

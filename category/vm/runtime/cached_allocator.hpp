@@ -23,10 +23,41 @@
 #include <cstdlib>
 #include <functional>
 #include <memory>
+#include <new>
 #include <vector>
+
+#ifdef _WIN32
+    #include <malloc.h>
+#endif
 
 namespace monad::vm::runtime
 {
+    namespace detail
+    {
+        // std::aligned_alloc/std::free are not available on mingw-w64
+        // (no underlying CRT aligned_alloc); _aligned_malloc/_aligned_free
+        // from <malloc.h> are the Windows equivalent.
+        [[gnu::always_inline]]
+        inline void *cached_aligned_alloc(size_t const alignment, size_t const size)
+        {
+#ifdef _WIN32
+            return _aligned_malloc(size, alignment);
+#else
+            return std::aligned_alloc(alignment, size);
+#endif
+        }
+
+        [[gnu::always_inline]]
+        inline void cached_aligned_free(void *const ptr)
+        {
+#ifdef _WIN32
+            _aligned_free(ptr);
+#else
+            std::free(ptr);
+#endif
+        }
+    }
+
     struct CachedAllocatorElement
     {
         CachedAllocatorElement *next;
@@ -75,7 +106,7 @@ namespace monad::vm::runtime
             auto *e = elements;
             while (e) {
                 auto *next = e->next;
-                std::free(e);
+                detail::cached_aligned_free(e);
                 e = next;
             }
         }
@@ -116,7 +147,7 @@ namespace monad::vm::runtime
         {
             if (T::cache_list.empty()) {
                 auto *const p = reinterpret_cast<uint8_t *>(
-                    std::aligned_alloc(T::alignment, alloc_size));
+                    detail::cached_aligned_alloc(T::alignment, alloc_size));
                 return p;
             }
             else {
@@ -128,7 +159,7 @@ namespace monad::vm::runtime
         void debug_clear_cache() const
         {
             while (!T::cache_list.empty()) {
-                std::free(T::cache_list.pop());
+                detail::cached_aligned_free(T::cache_list.pop());
             }
         }
 
@@ -136,7 +167,7 @@ namespace monad::vm::runtime
         void free_cached(uint8_t *const ptr) const
         {
             if (T::cache_list.size() >= max_slots_in_cache) {
-                std::free(ptr);
+                detail::cached_aligned_free(ptr);
             }
             else {
                 T::cache_list.push(

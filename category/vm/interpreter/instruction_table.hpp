@@ -390,6 +390,21 @@ namespace monad::vm::interpreter
         call_runtime(f, ctx, stack_top, gas_remaining);
     }
 
+#ifdef _WIN32
+    // See call_runtime.hpp: MONAD_VM_SYSV_ABI function pointers (e.g.
+    // runtime::mul) are a distinct type from the default ABI on Windows.
+    template <uint8_t Opcode, Traits traits, typename... FnArgs>
+    [[gnu::always_inline]] inline void checked_runtime_call(
+        void(MONAD_VM_SYSV_ABI *f)(FnArgs...), runtime::Context &ctx,
+        Intercode const &analysis, uint256_t const *stack_bottom,
+        uint256_t *stack_top, int64_t &gas_remaining, uint8_t const *)
+    {
+        check_requirements<Opcode, traits>(
+            ctx, analysis, stack_bottom, stack_top, gas_remaining);
+        call_runtime(f, ctx, stack_top, gas_remaining);
+    }
+#endif
+
 #ifdef MONAD_COMPILER_TESTING
     [[gnu::always_inline]]
     inline void fuzz_tstore_stack(

@@ -16,69 +16,103 @@
 #pragma once
 
 #include <category/vm/interpreter/types.hpp>
+#include <category/vm/runtime/abi.hpp>
 #include <category/vm/runtime/detail.hpp>
 #include <category/vm/runtime/types.hpp>
 
 namespace monad::vm::interpreter
 {
+    namespace detail
+    {
+        template <typename... FnArgs>
+        [[gnu::always_inline]]
+        inline void call_runtime_impl(
+            auto f, runtime::Context &ctx, uint256_t *const stack_top,
+            int64_t &gas_remaining)
+        {
+            constexpr auto use_context =
+                runtime::detail::uses_context_v<FnArgs...>;
+            constexpr auto use_result =
+                runtime::detail::uses_result_v<FnArgs...>;
+            constexpr auto use_base_gas =
+                runtime::detail::uses_remaining_gas_v<FnArgs...>;
+
+            constexpr auto stack_arg_count =
+                sizeof...(FnArgs) -
+                std::ranges::count(
+                    std::array{use_context, use_result, use_base_gas}, true);
+
+            auto const stack_args =
+                [&]<size_t... Is>(std::index_sequence<Is...>) {
+                    return std::tuple{(stack_top - Is)...};
+                }(std::make_index_sequence<stack_arg_count>());
+
+            auto const with_result_args = [&] {
+                if constexpr (use_result) {
+                    if constexpr (stack_arg_count == 0) {
+                        return std::tuple(stack_top + 1);
+                    }
+                    else {
+                        return std::tuple_cat(
+                            std::tuple(
+                                std::get<stack_arg_count - 1>(stack_args)),
+                            stack_args);
+                    }
+                }
+                else {
+                    return stack_args;
+                }
+            }();
+
+            auto const with_context_args = [&] {
+                if constexpr (use_context) {
+                    return std::tuple_cat(std::tuple(&ctx), with_result_args);
+                }
+                else {
+                    return with_result_args;
+                }
+            }();
+
+            auto const all_args = [&] {
+                if constexpr (use_base_gas) {
+                    return std::tuple_cat(
+                        with_context_args, std::tuple(int64_t{0}));
+                }
+                else {
+                    return with_context_args;
+                }
+            }();
+
+            ctx.gas_remaining = gas_remaining;
+            std::apply(f, all_args);
+
+            gas_remaining = ctx.gas_remaining;
+        }
+    }
+
     template <typename... FnArgs>
     [[gnu::always_inline]]
     inline void call_runtime(
         void (*f)(FnArgs...), runtime::Context &ctx, uint256_t *const stack_top,
         int64_t &gas_remaining)
     {
-        constexpr auto use_context = runtime::detail::uses_context_v<FnArgs...>;
-        constexpr auto use_result = runtime::detail::uses_result_v<FnArgs...>;
-        constexpr auto use_base_gas =
-            runtime::detail::uses_remaining_gas_v<FnArgs...>;
-
-        constexpr auto stack_arg_count =
-            sizeof...(FnArgs) -
-            std::ranges::count(
-                std::array{use_context, use_result, use_base_gas}, true);
-
-        auto const stack_args = [&]<size_t... Is>(std::index_sequence<Is...>) {
-            return std::tuple{(stack_top - Is)...};
-        }(std::make_index_sequence<stack_arg_count>());
-
-        auto const with_result_args = [&] {
-            if constexpr (use_result) {
-                if constexpr (stack_arg_count == 0) {
-                    return std::tuple(stack_top + 1);
-                }
-                else {
-                    return std::tuple_cat(
-                        std::tuple(std::get<stack_arg_count - 1>(stack_args)),
-                        stack_args);
-                }
-            }
-            else {
-                return stack_args;
-            }
-        }();
-
-        auto const with_context_args = [&] {
-            if constexpr (use_context) {
-                return std::tuple_cat(std::tuple(&ctx), with_result_args);
-            }
-            else {
-                return with_result_args;
-            }
-        }();
-
-        auto const all_args = [&] {
-            if constexpr (use_base_gas) {
-                return std::tuple_cat(
-                    with_context_args, std::tuple(int64_t{0}));
-            }
-            else {
-                return with_context_args;
-            }
-        }();
-
-        ctx.gas_remaining = gas_remaining;
-        std::apply(f, all_args);
-
-        gas_remaining = ctx.gas_remaining;
+        detail::call_runtime_impl<FnArgs...>(f, ctx, stack_top, gas_remaining);
     }
+
+#ifdef _WIN32
+    // On Windows, MONAD_VM_SYSV_ABI (used by hand-written assembly runtime
+    // functions such as monad_vm_runtime_mul) is a distinct function pointer
+    // type from the default Microsoft x64 ABI used above. Provide a second
+    // overload so both kinds of runtime function pointers can be invoked
+    // from the interpreter. On other platforms MONAD_VM_SYSV_ABI is a no-op,
+    // making this overload identical to the one above.
+    template <typename... FnArgs>
+    [[gnu::always_inline]]
+    inline void call_runtime(
+        void(MONAD_VM_SYSV_ABI *f)(FnArgs...), runtime::Context &ctx,
+        uint256_t *const stack_top, int64_t &gas_remaining)
+    {
+        detail::call_runtime_impl<FnArgs...>(f, ctx, stack_top, gas_remaining);
+    }
+#endif
 }

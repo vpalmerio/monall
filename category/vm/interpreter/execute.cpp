@@ -29,7 +29,7 @@ namespace monad::vm::interpreter
     namespace
     {
         template <Traits traits>
-        void core_loop(
+        void MONAD_VM_SYSV_ABI core_loop(
             void *, runtime::Context *ctx, Intercode const *analysis,
             uint256_t *stack_ptr, void *)
         {

@@ -16,7 +16,9 @@
 .text
 .intel_syntax noprefix
 .globl monad_vm_runtime_mul
+#ifdef __ELF__
 .type monad_vm_runtime_mul, @function
+#endif
 .align 16
 monad_vm_runtime_mul:
     push    r13
@@ -63,10 +65,14 @@ monad_vm_runtime_mul:
     pop     r12
     pop     r13
     ret
+#ifdef __ELF__
 .size monad_vm_runtime_mul, .-monad_vm_runtime_mul
+#endif
 
 .globl monad_vm_runtime_mul_192
+#ifdef __ELF__
 .type monad_vm_runtime_mul_192, @function
+#endif
 .align 16
 monad_vm_runtime_mul_192:
     mov     r8, qword ptr [rdx]
@@ -97,6 +103,8 @@ monad_vm_runtime_mul_192:
     mov     qword ptr [rdi + 8], r11
     mov     qword ptr [rdi + 16], rcx
     ret
+#ifdef __ELF__
 .size monad_vm_runtime_mul_192, .-monad_vm_runtime_mul_192
 
 .section .note.GNU-stack,"",@progbits
+#endif

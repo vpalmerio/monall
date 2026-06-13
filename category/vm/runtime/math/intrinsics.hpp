@@ -19,22 +19,23 @@
 #pragma once
 
 #include <category/core/runtime/uint256.hpp>
+#include <category/vm/runtime/abi.hpp>
 
 // It is assumed that if the `result` pointer overlaps with `left` and/or
 // `right`, then `result` pointer is equal to `left` and/or `right`.
-extern "C" void monad_vm_runtime_mul(
+extern "C" void MONAD_VM_SYSV_ABI monad_vm_runtime_mul(
     monad::uint256_t *result, monad::uint256_t const *left,
     monad::uint256_t const *right) noexcept;
 
 // It is assumed that if the `result` pointer overlaps with `left` and/or
 // `right`, then `result` pointer is equal to `left` and/or `right`.
-extern "C" void monad_vm_runtime_mul_192(
+extern "C" void MONAD_VM_SYSV_ABI monad_vm_runtime_mul_192(
     monad::uint256_t *result, monad::uint256_t const *left,
     monad::uint256_t const *right) noexcept;
 
 namespace monad::vm::runtime
 {
-    constexpr void (*mul)(
+    constexpr void (MONAD_VM_SYSV_ABI *mul)(
         uint256_t *, uint256_t const *,
         uint256_t const *) noexcept = monad_vm_runtime_mul;
 }

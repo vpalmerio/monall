@@ -19,7 +19,9 @@
 // same way as it does for compiled code.
 .text
 .globl monad_vm_interpreter_trampoline
+#ifdef __ELF__
 .type monad_vm_interpreter_trampoline, @function
+#endif
 .align 16
 monad_vm_interpreter_trampoline:
     pushq %rbp
@@ -36,5 +38,7 @@ monad_vm_interpreter_trampoline:
     // because the trampoline is not in the `.eh_frame` unwind table.
     call *%r8
     int3 // unreachable
+#ifdef __ELF__
 .size monad_vm_interpreter_trampoline, .-monad_vm_interpreter_trampoline
 .section .note.GNU-stack,"",@progbits
+#endif

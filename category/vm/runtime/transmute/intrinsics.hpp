@@ -22,20 +22,21 @@
 #include <category/core/int.hpp>
 #include <category/core/likely.h>
 #include <category/core/runtime/uint256.hpp>
+#include <category/vm/runtime/abi.hpp>
 
 #include <immintrin.h>
 
 // Load `load_size` bytes from `src_buffer` and clear the remaining upper bytes
 // of the result. It is required that `load_size <= 32`. If `load_size <= 0`
 // then zero is returned.
-extern "C" __m256i
+extern "C" __m256i MONAD_VM_SYSV_ABI
 monad_vm_runtime_load_bounded_le(uint8_t const *src_buffer, int64_t load_size);
 
 // Note: monad_vm_runtime_load_bounded_le_raw uses non-standard
 // calling convention. See transmute.S. Use the
 // monad_vm_runtime_load_bounded_le function for a version
 // using standard calling convention.
-extern "C" __m256i monad_vm_runtime_load_bounded_le_raw();
+extern "C" __m256i MONAD_VM_SYSV_ABI monad_vm_runtime_load_bounded_le_raw();
 
 namespace monad::vm::runtime
 {

@@ -22,23 +22,25 @@
 
 #include <category/core/runtime/uint256.hpp>
 #include <category/vm/interpreter/intercode.hpp>
+#include <category/vm/runtime/abi.hpp>
 #include <category/vm/runtime/types.hpp>
 #include <category/vm/utils/traits.hpp>
 
+#include <type_traits>
+
 // Implemented in entry.S.
-extern "C" void monad_vm_interpreter_trampoline(
+extern "C" void MONAD_VM_SYSV_ABI monad_vm_interpreter_trampoline(
     void *, ::monad::vm::runtime::Context *,
     ::monad::vm::interpreter::Intercode const *, monad::uint256_t *, void *);
 
 namespace monad::vm::interpreter
 {
-    using core_loop_fn_t = void (*)(
+    using core_loop_fn_t = void (MONAD_VM_SYSV_ABI *)(
         void *, runtime::Context *, Intercode const *, uint256_t *, void *);
 
     static_assert(
-        utils::same_signature(
-            &monad_vm_interpreter_trampoline,
-            static_cast<core_loop_fn_t>(nullptr)),
+        std::is_same_v<
+            decltype(&monad_vm_interpreter_trampoline), core_loop_fn_t>,
         "Interpreter core loop and trampoline signatures must be "
         "identical");
 

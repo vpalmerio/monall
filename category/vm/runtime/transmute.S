@@ -17,7 +17,9 @@
 
 .text
 .globl monad_vm_runtime_load_bounded_le_raw
+#ifdef __ELF__
 .type monad_vm_runtime_load_bounded_le_raw, @function
+#endif
 .align 16
 monad_vm_runtime_load_bounded_le_raw:
 // Arguments:
@@ -115,10 +117,14 @@ monad_vm_runtime_load_bounded_le_raw:
     vmovd xmm15, edx
     ret
 
+#ifdef __ELF__
 .size monad_vm_runtime_load_bounded_le_raw, .-monad_vm_runtime_load_bounded_le_raw
+#endif
 
 .globl monad_vm_runtime_load_bounded_le
+#ifdef __ELF__
 .type monad_vm_runtime_load_bounded_le, @function
+#endif
 .align 16
 monad_vm_runtime_load_bounded_le:
 // Arguments:
@@ -135,6 +141,8 @@ monad_vm_runtime_load_bounded_le:
 call monad_vm_runtime_load_bounded_le_raw
 vmovups ymm0, ymm15
 ret
+#ifdef __ELF__
 .size monad_vm_runtime_load_bounded_le, .-monad_vm_runtime_load_bounded_le
 
 .section .note.GNU-stack,"",@progbits
+#endif

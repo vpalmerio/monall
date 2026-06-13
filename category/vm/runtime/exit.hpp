@@ -20,12 +20,14 @@
 
 #pragma once
 
+#include <category/vm/runtime/abi.hpp>
+
 namespace monad::vm::runtime
 {
     using exit_stack_ptr_t = void *;
 }
 
-extern "C" void monad_vm_runtime_exit
+extern "C" void MONAD_VM_SYSV_ABI monad_vm_runtime_exit
     [[noreturn]] (monad::vm::runtime::exit_stack_ptr_t);
 
 namespace monad::vm::runtime

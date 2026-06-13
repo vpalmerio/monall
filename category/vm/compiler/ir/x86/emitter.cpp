@@ -1006,8 +1006,7 @@ namespace monad::vm::compiler::native
     void Emitter::add_jump_dest(byte_offset const d)
     {
         char name[2 * sizeof(byte_offset) + 2];
-        static_assert(sizeof(byte_offset) <= sizeof(long));
-        auto const isize = snprintf(name, sizeof(name), "B%lx", d);
+        auto const isize = snprintf(name, sizeof(name), "B%zx", d);
         auto const size = static_cast<size_t>(isize);
         MONAD_DEBUG_ASSERT(size < sizeof(name));
         jump_dests_.emplace(d, as_.newNamedLabel(name, size));
