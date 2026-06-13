@@ -2,6 +2,7 @@
 
 build
 build-zkvm
+build-win
 perf.data*
 scratch
 
