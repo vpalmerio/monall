@@ -62,6 +62,18 @@ if(MONAD_COMPILER_COVERAGE)
 endif()
 
 monad_compile_options(vm-unit-tests)
+
+if(WIN32)
+    # GoogleTest's GetTypeName() (used for typed/parameterized test names)
+    # demangles RTTI names via __cxa_demangle() from libstdc++-6.dll and
+    # frees the result with this binary's own free(). On this mingw-w64
+    # toolchain those resolve to different CRT heaps (ucrtbase vs msvcrt),
+    # so the free() crashes during static initialization of typed tests.
+    # Disabling the cxxabi demangling path avoids the cross-heap free();
+    # typed test names just show up mangled instead.
+    target_compile_definitions(vm-unit-tests PRIVATE "GTEST_HAS_CXXABI_H_=0")
+endif()
+
 target_link_libraries(vm-unit-tests
     PRIVATE monad-vm::monad-vm-test-utils
     PRIVATE monad-vm::monad-vm-fuzzing
