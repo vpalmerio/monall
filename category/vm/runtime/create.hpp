@@ -21,13 +21,13 @@
 namespace monad::vm::runtime
 {
     template <Traits traits>
-    void create(
+    void MONAD_VM_SYSV_ABI create(
         Context *ctx, uint256_t *result_ptr, uint256_t const *value_ptr,
         uint256_t const *offset_ptr, uint256_t const *size_ptr,
         int64_t remaining_block_base_gas);
 
     template <Traits traits>
-    void create2(
+    void MONAD_VM_SYSV_ABI create2(
         Context *ctx, uint256_t *result_ptr, uint256_t const *value_ptr,
         uint256_t const *offset_ptr, uint256_t const *size_ptr,
         uint256_t const *salt_ptr, int64_t remaining_block_base_gas);

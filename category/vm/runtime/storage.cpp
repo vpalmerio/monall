@@ -34,7 +34,8 @@
 namespace monad::vm::runtime
 {
     template <Traits traits>
-    void sload(Context *ctx, uint256_t *result_ptr, uint256_t const *key_ptr)
+    void MONAD_VM_SYSV_ABI
+    sload(Context *ctx, uint256_t *result_ptr, uint256_t const *key_ptr)
     {
         auto key = store_be_as<bytes32_t>(*key_ptr);
 
@@ -55,7 +56,7 @@ namespace monad::vm::runtime
     EXPLICIT_TRAITS(sload);
 
     template <Traits traits>
-    void sstore(
+    void MONAD_VM_SYSV_ABI sstore(
         Context *ctx, uint256_t const *key_ptr, uint256_t const *value_ptr,
         int64_t const remaining_block_base_gas)
     {

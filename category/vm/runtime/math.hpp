@@ -25,7 +25,7 @@
 
 namespace monad::vm::runtime
 {
-    constexpr void udiv(
+    constexpr void MONAD_VM_SYSV_ABI udiv(
         uint256_t *const result_ptr, uint256_t const *const a_ptr,
         uint256_t const *const b_ptr) noexcept
     {
@@ -37,7 +37,7 @@ namespace monad::vm::runtime
         *result_ptr = *a_ptr / *b_ptr;
     }
 
-    constexpr void sdiv(
+    constexpr void MONAD_VM_SYSV_ABI sdiv(
         uint256_t *const result_ptr, uint256_t const *const a_ptr,
         uint256_t const *const b_ptr) noexcept
     {
@@ -49,7 +49,7 @@ namespace monad::vm::runtime
         *result_ptr = sdivrem(*a_ptr, *b_ptr).quot;
     }
 
-    constexpr void umod(
+    constexpr void MONAD_VM_SYSV_ABI umod(
         uint256_t *const result_ptr, uint256_t const *const a_ptr,
         uint256_t const *const b_ptr) noexcept
     {
@@ -61,7 +61,7 @@ namespace monad::vm::runtime
         *result_ptr = *a_ptr % *b_ptr;
     }
 
-    constexpr void smod(
+    constexpr void MONAD_VM_SYSV_ABI smod(
         uint256_t *const result_ptr, uint256_t const *const a_ptr,
         uint256_t const *const b_ptr) noexcept
     {
@@ -73,7 +73,7 @@ namespace monad::vm::runtime
         *result_ptr = sdivrem(*a_ptr, *b_ptr).rem;
     }
 
-    constexpr void addmod(
+    constexpr void MONAD_VM_SYSV_ABI addmod(
         uint256_t *const result_ptr, uint256_t const *const a_ptr,
         uint256_t const *const b_ptr, uint256_t const *const n_ptr) noexcept
     {
@@ -85,7 +85,7 @@ namespace monad::vm::runtime
         *result_ptr = addmod(*a_ptr, *b_ptr, *n_ptr);
     }
 
-    constexpr void mulmod(
+    constexpr void MONAD_VM_SYSV_ABI mulmod(
         uint256_t *const result_ptr, uint256_t const *const a_ptr,
         uint256_t const *const b_ptr, uint256_t const *const n_ptr) noexcept
     {
@@ -107,7 +107,7 @@ namespace monad::vm::runtime
 
     template <Traits traits>
     constexpr void
-    exp(Context *ctx, uint256_t *result_ptr, uint256_t const *a_ptr,
+    MONAD_VM_SYSV_ABI exp(Context *ctx, uint256_t *result_ptr, uint256_t const *a_ptr,
         uint256_t const *exponent_ptr) noexcept
     {
         auto const exponent_byte_size = count_significant_bytes(*exponent_ptr);

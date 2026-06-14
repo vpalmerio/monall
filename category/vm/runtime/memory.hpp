@@ -53,7 +53,7 @@ namespace monad::vm::runtime
     }
 
     template <Traits traits>
-    inline void mcopy(
+    inline void MONAD_VM_SYSV_ABI mcopy(
         Context *ctx, uint256_t const *dst_ptr, uint256_t const *src_ptr,
         uint256_t const *size_ptr)
     {

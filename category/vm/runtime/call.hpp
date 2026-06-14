@@ -23,7 +23,7 @@
 namespace monad::vm::runtime
 {
     template <Traits traits>
-    void call(
+    void MONAD_VM_SYSV_ABI call(
         Context *ctx, uint256_t *result_ptr, uint256_t const *gas_ptr,
         uint256_t const *address_ptr, uint256_t const *value_ptr,
         uint256_t const *args_offset_ptr, uint256_t const *args_size_ptr,
@@ -31,7 +31,7 @@ namespace monad::vm::runtime
         int64_t remaining_block_base_gas);
 
     template <Traits traits>
-    void callcode(
+    void MONAD_VM_SYSV_ABI callcode(
         Context *ctx, uint256_t *result_ptr, uint256_t const *gas_ptr,
         uint256_t const *address_ptr, uint256_t const *value_ptr,
         uint256_t const *args_offset_ptr, uint256_t const *args_size_ptr,
@@ -39,14 +39,14 @@ namespace monad::vm::runtime
         int64_t remaining_block_base_gas);
 
     template <Traits traits>
-    void delegatecall(
+    void MONAD_VM_SYSV_ABI delegatecall(
         Context *ctx, uint256_t *result_ptr, uint256_t const *gas_ptr,
         uint256_t const *address_ptr, uint256_t const *args_offset_ptr,
         uint256_t const *args_size_ptr, uint256_t const *ret_offset_ptr,
         uint256_t const *ret_size_ptr, int64_t remaining_block_base_gas);
 
     template <Traits traits>
-    void staticcall(
+    void MONAD_VM_SYSV_ABI staticcall(
         Context *ctx, uint256_t *result_ptr, uint256_t const *gas_ptr,
         uint256_t const *address_ptr, uint256_t const *args_offset_ptr,
         uint256_t const *args_size_ptr, uint256_t const *ret_offset_ptr,

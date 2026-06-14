@@ -19,10 +19,11 @@
 
 namespace monad::vm::runtime
 {
-    void blockhash(
+    void MONAD_VM_SYSV_ABI blockhash(
         Context *ctx, uint256_t *result_ptr, uint256_t const *block_number_ptr);
 
-    void selfbalance(Context *ctx, uint256_t *result_ptr);
+    void MONAD_VM_SYSV_ABI selfbalance(Context *ctx, uint256_t *result_ptr);
 
-    void blobhash(Context *ctx, uint256_t *result_ptr, uint256_t const *index);
+    void MONAD_VM_SYSV_ABI
+    blobhash(Context *ctx, uint256_t *result_ptr, uint256_t const *index);
 }

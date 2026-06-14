@@ -60,7 +60,7 @@ namespace monad::vm::runtime
     EXPLICIT_TRAITS(log_impl);
 
     template <Traits traits>
-    void
+    void MONAD_VM_SYSV_ABI
     log0(Context *ctx, uint256_t const *offset_ptr, uint256_t const *size_ptr)
     {
         log_impl<traits>(ctx, *offset_ptr, *size_ptr, {});
@@ -69,7 +69,7 @@ namespace monad::vm::runtime
     EXPLICIT_TRAITS(log0);
 
     template <Traits traits>
-    void log1(
+    void MONAD_VM_SYSV_ABI log1(
         Context *ctx, uint256_t const *offset_ptr, uint256_t const *size_ptr,
         uint256_t const *topic1_ptr)
     {
@@ -85,7 +85,7 @@ namespace monad::vm::runtime
     EXPLICIT_TRAITS(log1);
 
     template <Traits traits>
-    void log2(
+    void MONAD_VM_SYSV_ABI log2(
         Context *ctx, uint256_t const *offset_ptr, uint256_t const *size_ptr,
         uint256_t const *topic1_ptr, uint256_t const *topic2_ptr)
     {
@@ -102,7 +102,7 @@ namespace monad::vm::runtime
     EXPLICIT_TRAITS(log2);
 
     template <Traits traits>
-    void log3(
+    void MONAD_VM_SYSV_ABI log3(
         Context *ctx, uint256_t const *offset_ptr, uint256_t const *size_ptr,
         uint256_t const *topic1_ptr, uint256_t const *topic2_ptr,
         uint256_t const *topic3_ptr)
@@ -121,7 +121,7 @@ namespace monad::vm::runtime
     EXPLICIT_TRAITS(log3);
 
     template <Traits traits>
-    void log4(
+    void MONAD_VM_SYSV_ABI log4(
         Context *ctx, uint256_t const *offset_ptr, uint256_t const *size_ptr,
         uint256_t const *topic1_ptr, uint256_t const *topic2_ptr,
         uint256_t const *topic3_ptr, uint256_t const *topic4_ptr)

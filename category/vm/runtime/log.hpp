@@ -21,27 +21,27 @@
 namespace monad::vm::runtime
 {
     template <Traits traits>
-    void
+    void MONAD_VM_SYSV_ABI
     log0(Context *ctx, uint256_t const *offset_ptr, uint256_t const *size_ptr);
 
     template <Traits traits>
-    void log1(
+    void MONAD_VM_SYSV_ABI log1(
         Context *ctx, uint256_t const *offset_ptr, uint256_t const *size_ptr,
         uint256_t const *topic1_ptr);
 
     template <Traits traits>
-    void log2(
+    void MONAD_VM_SYSV_ABI log2(
         Context *ctx, uint256_t const *offset_ptr, uint256_t const *size_ptr,
         uint256_t const *topic1_ptr, uint256_t const *topic2_ptr);
 
     template <Traits traits>
-    void log3(
+    void MONAD_VM_SYSV_ABI log3(
         Context *ctx, uint256_t const *offset_ptr, uint256_t const *size_ptr,
         uint256_t const *topic1_ptr, uint256_t const *topic2_ptr,
         uint256_t const *topic3_ptr);
 
     template <Traits traits>
-    void log4(
+    void MONAD_VM_SYSV_ABI log4(
         Context *ctx, uint256_t const *offset_ptr, uint256_t const *size_ptr,
         uint256_t const *topic1_ptr, uint256_t const *topic2_ptr,
         uint256_t const *topic3_ptr, uint256_t const *topic4_ptr);

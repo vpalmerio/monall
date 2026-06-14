@@ -28,7 +28,8 @@
 namespace monad::vm::runtime
 {
     template <Traits traits>
-    void selfdestruct [[noreturn]] (Context *ctx, uint256_t const *address_ptr)
+    void MONAD_VM_SYSV_ABI selfdestruct
+        [[noreturn]] (Context *ctx, uint256_t const *address_ptr)
     {
         static_assert(traits::evm_rev() > MONAD_ETH_TANGERINE_WHISTLE);
 

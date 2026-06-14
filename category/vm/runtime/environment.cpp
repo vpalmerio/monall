@@ -26,7 +26,7 @@
 
 namespace monad::vm::runtime
 {
-    void blockhash(
+    void MONAD_VM_SYSV_ABI blockhash(
         Context *const ctx, uint256_t *const result_ptr,
         uint256_t const *const block_number_ptr)
     {
@@ -51,14 +51,14 @@ namespace monad::vm::runtime
         }
     }
 
-    void selfbalance(Context *const ctx, uint256_t *const result_ptr)
+    void MONAD_VM_SYSV_ABI selfbalance(Context *const ctx, uint256_t *const result_ptr)
     {
         auto const balance = static_cast<bytes32_t>(
             ctx->host->get_balance(ctx->context, &ctx->env.recipient));
         *result_ptr = load_be<uint256_t>(balance);
     }
 
-    void blobhash(
+    void MONAD_VM_SYSV_ABI blobhash(
         Context *const ctx, uint256_t *const result_ptr,
         uint256_t const *const index)
     {

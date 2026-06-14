@@ -33,6 +33,11 @@ function(monad_compile_options target)
     # `interface` as an identifier. NOMINMAX avoids a similar collision
     # between windows.h's min/max macros and std::min/std::max.
     target_compile_definitions(${target} PUBLIC "WIN32_LEAN_AND_MEAN" "NOMINMAX")
+
+    # MinGW's default thread stack reserve (2 MiB) is smaller than the
+    # typical Linux default (8 MiB, via ulimit -s). The EVM call stack can
+    # recurse up to 1024 levels deep, which overflows the smaller default.
+    target_link_options(${target} PRIVATE "-Wl,--stack,8388608")
   endif()
 
   target_compile_options(

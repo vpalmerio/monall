@@ -25,14 +25,15 @@
 namespace monad::vm::runtime
 {
     template <Traits traits>
-    void sload(Context *ctx, uint256_t *result_ptr, uint256_t const *key_ptr);
+    void MONAD_VM_SYSV_ABI
+    sload(Context *ctx, uint256_t *result_ptr, uint256_t const *key_ptr);
 
     template <Traits traits>
-    void sstore(
+    void MONAD_VM_SYSV_ABI sstore(
         Context *ctx, uint256_t const *key_ptr, uint256_t const *value_ptr,
         int64_t remaining_block_base_gas);
 
-    inline void tload(
+    inline void MONAD_VM_SYSV_ABI tload(
         Context *const ctx, uint256_t *const result_ptr,
         uint256_t const *const key_ptr)
     {
@@ -44,7 +45,7 @@ namespace monad::vm::runtime
         *result_ptr = load_be<uint256_t>(value);
     }
 
-    inline void tstore(
+    inline void MONAD_VM_SYSV_ABI tstore(
         Context *const ctx, uint256_t const *const key_ptr,
         uint256_t const *const val_ptr)
     {

@@ -17,6 +17,7 @@
 
 #include <category/core/address.hpp>
 #include <category/core/runtime/uint256.hpp>
+#include <category/vm/runtime/abi.hpp>
 #include <category/vm/runtime/detail.hpp>
 #include <category/vm/runtime/types.hpp>
 #include <monad/test/traits_test.hpp>
@@ -29,7 +30,11 @@
 
 #include <limits>
 
-extern "C" void tests_trampoline(void *, void (*)(void *), void *);
+// tests_trampoline (fixture.S) is hand-written SysV x86-64 assembly; pin its
+// declaration (and the callback it invokes) so arguments are passed via
+// rdi/rsi/rdx on Windows too.
+extern "C" void MONAD_VM_SYSV_ABI
+tests_trampoline(void *, void (MONAD_VM_SYSV_ABI *)(void *), void *);
 
 namespace monad::vm::compiler::test
 {
@@ -62,7 +67,7 @@ namespace monad::vm::compiler::test
         // shim to be able to pass a function pointer to tests_trampoline
         // which will then correctly invoke the actual closure/lambda
         template <typename Closure>
-        static void call_closure(void *ptr)
+        static void MONAD_VM_SYSV_ABI call_closure(void *ptr)
         {
             auto *fn = reinterpret_cast<Closure *>(ptr);
             (*fn)();
@@ -82,8 +87,12 @@ namespace monad::vm::compiler::test
          * objects, and creates an array of the corresponding uint256_t objects
          * on the stack, which can then be passed to the runtime.
          */
-        template <typename... FnArgs>
-        auto wrap(void (*f)(FnArgs...))
+        // Shared implementation for wrap() overloads below. Templated
+        // separately on the function pointer type `F` so it can accept both
+        // plain (default-ABI) and MONAD_VM_SYSV_ABI-pinned function
+        // pointers, while FnArgs... still drives the metaprogramming.
+        template <typename... FnArgs, typename F>
+        auto wrap_generic(F f)
         {
             constexpr auto use_context = detail::uses_context_v<FnArgs...>;
             constexpr auto use_result = detail::uses_result_v<FnArgs...>;
@@ -163,11 +172,37 @@ namespace monad::vm::compiler::test
             };
         }
 
+        template <typename... FnArgs>
+        auto wrap(void (*f)(FnArgs...))
+        {
+            return wrap_generic<FnArgs...>(f);
+        }
+
+#ifdef _WIN32
+        // Many runtime::* functions are pinned to MONAD_VM_SYSV_ABI (see
+        // category/vm/runtime/abi.hpp), which makes their function pointer
+        // type distinct from the default (Microsoft x64) ABI on Windows.
+        // Overload wrap()/call() so tests can pass those pointers directly.
+        template <typename... FnArgs>
+        auto wrap(void(MONAD_VM_SYSV_ABI *f)(FnArgs...))
+        {
+            return wrap_generic<FnArgs...>(f);
+        }
+#endif
+
         template <typename... FnArgs, typename... Args>
         auto call(void (*f)(FnArgs...), Args &&...args)
         {
             return wrap(f)(std::forward<Args>(args)...);
         }
+
+#ifdef _WIN32
+        template <typename... FnArgs, typename... Args>
+        auto call(void(MONAD_VM_SYSV_ABI *f)(FnArgs...), Args &&...args)
+        {
+            return wrap(f)(std::forward<Args>(args)...);
+        }
+#endif
 
         void set_balance(uint256_t addr, uint256_t balance);
 

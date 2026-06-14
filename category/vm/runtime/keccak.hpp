@@ -26,7 +26,7 @@
 namespace monad::vm::runtime
 {
     template <Traits traits>
-    inline void sha3(
+    inline void MONAD_VM_SYSV_ABI sha3(
         Context *ctx, uint256_t *result_ptr, uint256_t const *offset_ptr,
         uint256_t const *size_ptr)
     {

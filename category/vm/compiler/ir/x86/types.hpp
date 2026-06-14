@@ -30,7 +30,11 @@ namespace monad::vm::compiler::native
     /// Native code size should be smaller than 2GB to avoid overflowing
     /// relative offsets of type `int32_t`.
     using native_code_size_t = runtime::Bin<26>;
-    using entrypoint_t = void (*)(runtime::Context *, uint8_t *);
+    // The JIT-emitted contract code (see emitter.hpp) is generated assuming
+    // the System V x86-64 calling convention; pin entrypoint_t to that ABI
+    // so callers on Windows pass arguments via rdi/rsi as the generated code
+    // expects.
+    using entrypoint_t = void (MONAD_VM_SYSV_ABI *)(runtime::Context *, uint8_t *);
 
     class Nativecode
     {

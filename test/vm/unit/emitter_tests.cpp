@@ -870,7 +870,7 @@ namespace
         ASSERT_EQ(load_le<uint256_t>(ret.size), 2);
     }
 
-    void runtime_test_12_arg_fun(
+    void MONAD_VM_SYSV_ABI runtime_test_12_arg_fun(
         runtime::Context *const ctx, uint256_t *const result,
         uint256_t const *const a, uint256_t const *const b,
         uint256_t const *const c, uint256_t const *const d,
@@ -883,7 +883,7 @@ namespace
                    (*a - (*b - (*c - (*d - (*e - (*f - (*g - (*h - *i)))))))));
     }
 
-    void runtime_test_11_arg_fun(
+    void MONAD_VM_SYSV_ABI runtime_test_11_arg_fun(
         runtime::Context *const ctx, uint256_t *const result,
         uint256_t const *const a, uint256_t const *const b,
         uint256_t const *const c, uint256_t const *const d,

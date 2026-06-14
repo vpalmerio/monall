@@ -25,7 +25,7 @@
 namespace monad::vm::runtime
 {
     template <Traits traits>
-    void
+    void MONAD_VM_SYSV_ABI
     balance(Context *ctx, uint256_t *result_ptr, uint256_t const *address_ptr);
 
     inline void calldataload(
@@ -49,31 +49,31 @@ namespace monad::vm::runtime
     }
 
     template <Traits traits>
-    void calldatacopy(
+    void MONAD_VM_SYSV_ABI calldatacopy(
         Context *ctx, uint256_t const *dest_offset_ptr,
         uint256_t const *offset_ptr, uint256_t const *size_ptr);
 
     template <Traits traits>
-    void codecopy(
+    void MONAD_VM_SYSV_ABI codecopy(
         Context *ctx, uint256_t const *dest_offset_ptr,
         uint256_t const *offset_ptr, uint256_t const *size_ptr);
 
     template <Traits traits>
-    void extcodecopy(
+    void MONAD_VM_SYSV_ABI extcodecopy(
         Context *ctx, uint256_t const *address_ptr,
         uint256_t const *dest_offset_ptr, uint256_t const *offset_ptr,
         uint256_t const *size_ptr);
 
     template <Traits traits>
-    void returndatacopy(
+    void MONAD_VM_SYSV_ABI returndatacopy(
         Context *ctx, uint256_t const *dest_offset_ptr,
         uint256_t const *offset_ptr, uint256_t const *size_ptr);
 
     template <Traits traits>
-    void extcodehash(
-        Context *ctx, uint256_t *result_ptr, uint256_t const *address_ptr);
+    void MONAD_VM_SYSV_ABI
+    extcodehash(Context *ctx, uint256_t *result_ptr, uint256_t const *address_ptr);
 
     template <Traits traits>
-    void extcodesize(
-        Context *ctx, uint256_t *result_ptr, uint256_t const *address_ptr);
+    void MONAD_VM_SYSV_ABI
+    extcodesize(Context *ctx, uint256_t *result_ptr, uint256_t const *address_ptr);
 }
