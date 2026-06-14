@@ -41,10 +41,6 @@
 
 #include <stdio.h>
 
-#ifdef _WIN32
-    #include <category/core/compat.h>
-#endif
-
 #include <silkpre/precompile.h>
 #include <silkpre/sha256.h>
 
@@ -54,9 +50,121 @@
 #include <optional>
 #include <string_view>
 
+#ifdef _WIN32
+    #include <cctype>
+    #include <span>
+    #include <vector>
+#endif
+
 namespace
 {
     std::optional<KZGSettings> g_trustedSetup;
+
+#ifdef _WIN32
+    // Mirrors the file-local constants in
+    // third_party/c-kzg-4844/src/setup/setup.c.
+    constexpr size_t NUM_G1_POINTS = 4096; // FIELD_ELEMENTS_PER_BLOB
+    constexpr size_t NUM_G2_POINTS = 65;
+    constexpr size_t BYTES_PER_G1 = 48;
+    constexpr size_t BYTES_PER_G2 = 96;
+
+    // Parses the trusted setup data in the same textual format as
+    // load_trusted_setup_file() (two decimal point counts followed by
+    // whitespace-separated hex bytes: g1 lagrange, g2 monomial, g1
+    // monomial), without going through stdio. fmemopen()/tmpfile() corrupt
+    // the heap on this mingw-w64 toolchain because the CRT internal file
+    // tables used by tmpfile() and fclose() resolve to different CRTs
+    // (ucrtbase vs msvcrt).
+    C_KZG_RET load_trusted_setup_from_bytes(
+        KZGSettings *const out, std::span<uint8_t const> const data)
+    {
+        size_t pos = 0;
+
+        auto const skip_whitespace = [&] {
+            while (pos < data.size() && std::isspace(data[pos])) {
+                ++pos;
+            }
+        };
+
+        auto const read_decimal = [&](uint64_t &value) -> bool {
+            skip_whitespace();
+            size_t const start = pos;
+            value = 0;
+            while (pos < data.size() && std::isdigit(data[pos])) {
+                value = value * 10 + static_cast<uint64_t>(data[pos] - '0');
+                ++pos;
+            }
+            return pos != start;
+        };
+
+        auto const hex_digit = [](uint8_t const c) -> int {
+            if (c >= '0' && c <= '9') {
+                return c - '0';
+            }
+            if (c >= 'a' && c <= 'f') {
+                return c - 'a' + 10;
+            }
+            if (c >= 'A' && c <= 'F') {
+                return c - 'A' + 10;
+            }
+            return -1;
+        };
+
+        auto const read_byte = [&](uint8_t &value) -> bool {
+            skip_whitespace();
+            if (pos + 1 >= data.size()) {
+                return false;
+            }
+            int const hi = hex_digit(data[pos]);
+            int const lo = hex_digit(data[pos + 1]);
+            if (hi < 0 || lo < 0) {
+                return false;
+            }
+            value = static_cast<uint8_t>((hi << 4) | lo);
+            pos += 2;
+            return true;
+        };
+
+        uint64_t num_g1_points;
+        uint64_t num_g2_points;
+        if (!read_decimal(num_g1_points) || num_g1_points != NUM_G1_POINTS) {
+            return C_KZG_BADARGS;
+        }
+        if (!read_decimal(num_g2_points) || num_g2_points != NUM_G2_POINTS) {
+            return C_KZG_BADARGS;
+        }
+
+        std::vector<uint8_t> g1_lagrange_bytes(NUM_G1_POINTS * BYTES_PER_G1);
+        std::vector<uint8_t> g2_monomial_bytes(NUM_G2_POINTS * BYTES_PER_G2);
+        std::vector<uint8_t> g1_monomial_bytes(NUM_G1_POINTS * BYTES_PER_G1);
+
+        for (auto &byte : g1_lagrange_bytes) {
+            if (!read_byte(byte)) {
+                return C_KZG_BADARGS;
+            }
+        }
+        for (auto &byte : g2_monomial_bytes) {
+            if (!read_byte(byte)) {
+                return C_KZG_BADARGS;
+            }
+        }
+        for (auto &byte : g1_monomial_bytes) {
+            if (!read_byte(byte)) {
+                return C_KZG_BADARGS;
+            }
+        }
+
+        return load_trusted_setup(
+            out,
+            g1_monomial_bytes.data(),
+            g1_monomial_bytes.size(),
+            g1_lagrange_bytes.data(),
+            g1_lagrange_bytes.size(),
+            g2_monomial_bytes.data(),
+            g2_monomial_bytes.size(),
+            0);
+    }
+#endif
 
     monad::bytes32_t kzg_to_version_hashed(KZGCommitment const &commitment)
     {
@@ -95,6 +203,15 @@ bool init_trusted_setup()
     if (!g_trustedSetup.has_value()) {
         auto const setup = c_kzg_4844::trusted_setup_data();
         KZGSettings settings;
+#ifdef _WIN32
+        // Avoid fmemopen()/load_trusted_setup_file() here: tmpfile() and
+        // fclose() resolve to different CRTs (ucrtbase vs msvcrt) on this
+        // mingw-w64 toolchain, which corrupts the heap when the FILE* is
+        // closed. Parse the same data in memory instead.
+        if (load_trusted_setup_from_bytes(&settings, setup) == C_KZG_OK) {
+            g_trustedSetup.emplace(settings);
+        }
+#else
         FILE *fp = fmemopen((void *)(setup.data()), setup.size(), "r");
         if (fp) {
             if (load_trusted_setup_file(&settings, fp, 0) == C_KZG_OK) {
@@ -102,6 +219,7 @@ bool init_trusted_setup()
             }
             fclose(fp);
         }
+#endif
     }
     return g_trustedSetup.has_value();
 }
