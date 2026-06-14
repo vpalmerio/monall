@@ -67,7 +67,7 @@
 #include <signal.h>
 #include <stdexcept>
 #include <string>
-#include <sys/sysinfo.h>
+#include <thread>
 #include <unistd.h>
 #include <vector>
 
@@ -132,7 +132,8 @@ try {
     bool as_eth_blocks = false;
     std::chrono::seconds block_db_timeout = std::chrono::seconds::zero();
     std::string exec_event_ring_config;
-    unsigned sq_thread_cpu = static_cast<unsigned>(get_nprocs() - 1);
+    unsigned sq_thread_cpu =
+        std::max<unsigned>(1, std::thread::hardware_concurrency()) - 1;
     bool disable_sq_thread_cpu = false;
     std::optional<unsigned> ro_sq_thread_cpu;
     std::vector<fs::path> dbname_paths;
@@ -500,10 +501,11 @@ try {
             elapsed,
             result.assume_value().first,
             result.assume_value().first /
-                std::max(1UL, static_cast<uint64_t>(elapsed.count())),
+                std::max(uint64_t{1}, static_cast<uint64_t>(elapsed.count())),
             result.assume_value().second /
                 (1'000'000 *
-                 std::max(1UL, static_cast<uint64_t>(elapsed.count()))),
+                 std::max(
+                     uint64_t{1}, static_cast<uint64_t>(elapsed.count()))),
             vm.print_compiler_stats(),
             vm.print_total_counts());
     }

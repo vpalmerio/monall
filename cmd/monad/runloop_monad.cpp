@@ -92,7 +92,7 @@ void log_tps(
         static_cast<uint64_t>(
             std::chrono::duration_cast<std::chrono::microseconds>(now - begin)
                 .count()),
-        1UL); // for the unlikely case that elapsed < 1 mic
+        uint64_t{1}); // for the unlikely case that elapsed < 1 mic
     uint64_t const tps = (ntxs) * 1'000'000 / elapsed;
     uint64_t const gps = gas / elapsed;
 
@@ -379,14 +379,14 @@ Result<BlockExecOutput> propose_block(
         commit_time,
         block_time,
         block.transactions.size() * 1'000'000 /
-            (uint64_t)std::max(1L, block_metrics.tx_exec_time.count()),
+            (uint64_t)std::max(int64_t{1}, block_metrics.tx_exec_time.count()),
         block.transactions.size() * 1'000'000 /
-            (uint64_t)std::max(1L, block_time.count()),
+            (uint64_t)std::max(int64_t{1}, block_time.count()),
         exec_output.eth_header.gas_used,
         exec_output.eth_header.gas_used /
-            (uint64_t)std::max(1L, block_metrics.tx_exec_time.count()),
+            (uint64_t)std::max(int64_t{1}, block_metrics.tx_exec_time.count()),
         exec_output.eth_header.gas_used /
-            (uint64_t)std::max(1L, block_time.count()),
+            (uint64_t)std::max(int64_t{1}, block_time.count()),
         db.print_stats(),
         vm.print_and_reset_block_counts(),
         vm.print_compiler_stats());

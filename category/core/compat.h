@@ -46,6 +46,10 @@
         #define AT_FDCWD (-100)
     #endif
 
+    // stdio.h: renameat2() flag; unused by the renameat2() shim below since
+    // Windows rename() already implements RENAME_NOREPLACE semantics
+    #define RENAME_NOREPLACE 1
+
     // fcntl.h: close-on-exec equivalent
     #ifndef O_CLOEXEC
         #define O_CLOEXEC O_NOINHERIT
@@ -397,6 +401,45 @@ madvise(void *const addr, size_t const length, int const advice)
 static inline int pipe(int pfds[2])
 {
     return _pipe(pfds, 4096, _O_BINARY);
+}
+
+// flock(2): whole-file advisory lock via LockFileEx()/UnlockFileEx(), used to
+// coordinate ownership of event-ring files between processes
+static inline int flock(int const fd, int const operation)
+{
+    HANDLE const h = (HANDLE)_get_osfhandle(fd);
+    if (h == INVALID_HANDLE_VALUE) {
+        errno = EBADF;
+        return -1;
+    }
+    OVERLAPPED ov = {};
+    if (operation & LOCK_UN) {
+        if (!UnlockFileEx(h, 0, MAXDWORD, MAXDWORD, &ov)) {
+            errno = EINVAL;
+            return -1;
+        }
+        return 0;
+    }
+    DWORD flags = (operation & LOCK_EX) ? LOCKFILE_EXCLUSIVE_LOCK : 0;
+    if (operation & LOCK_NB) {
+        flags |= LOCKFILE_FAIL_IMMEDIATELY;
+    }
+    if (!LockFileEx(h, flags, 0, MAXDWORD, MAXDWORD, &ov)) {
+        errno = (operation & LOCK_NB) ? EWOULDBLOCK : EIO;
+        return -1;
+    }
+    return 0;
+}
+
+// renameat2(2) with RENAME_NOREPLACE: Windows rename() already fails with
+// EEXIST if the destination exists, which is exactly the NOREPLACE
+// semantic the callers in this codebase rely on; the dirfd arguments are
+// unused since only absolute paths with AT_FDCWD are passed
+static inline int renameat2(
+    int /* olddirfd */, char const *const oldpath, int /* newdirfd */,
+    char const *const newpath, unsigned int /* flags */)
+{
+    return rename(oldpath, newpath);
 }
 
     #ifdef __cplusplus

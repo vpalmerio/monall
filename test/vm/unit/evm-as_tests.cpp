@@ -51,6 +51,10 @@
 #include <string>
 #include <vector>
 
+#ifdef _WIN32
+    #include <malloc.h> // for _aligned_malloc/_aligned_free
+#endif
+
 using namespace monad;
 using namespace monad::vm;
 using namespace monad::vm::runtime;
@@ -114,14 +118,24 @@ namespace
     {
         void operator()(uint8_t *const p) const
         {
+#ifdef _WIN32
+            ::_aligned_free(p);
+#else
             std::free(p);
+#endif
         }
     } test_stack_memory_deleter;
 
     std::unique_ptr<uint8_t, TestStackMemoryDeleter> test_stack_memory()
     {
         return {
-            reinterpret_cast<uint8_t *>(std::aligned_alloc(32, 32 * 1024)),
+            reinterpret_cast<uint8_t *>(
+#ifdef _WIN32
+                _aligned_malloc(32 * 1024, 32)
+#else
+                std::aligned_alloc(32, 32 * 1024)
+#endif
+                    ),
             test_stack_memory_deleter};
     }
 

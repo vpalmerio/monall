@@ -190,12 +190,18 @@ if(${CMAKE_SYSTEM_NAME} MATCHES "Linux")
             "event/event_ring_util_linux.c"
             # mem
             "mem/hugetlb_path.c"
-            "mem/hugetlb_path.h"
-            # procfs
-            "procfs/statm.c"
-            "procfs/statm.h")
+            "mem/hugetlb_path.h")
 else()
   target_sources(monad_core PRIVATE "event/event_ring_util_posix.c")
+endif()
+
+# procfs/statm has implementations for Linux (/proc/self/statm) and Windows
+# (GetProcessMemoryInfo)
+if(${CMAKE_SYSTEM_NAME} MATCHES "Linux" OR WIN32)
+  target_sources(monad_core PRIVATE "procfs/statm.c" "procfs/statm.h")
+endif()
+if(WIN32)
+  target_link_libraries(monad_core PRIVATE psapi)
 endif()
 
 target_include_directories(monad_core PRIVATE "${THIRD_PARTY_DIR}/openssl")

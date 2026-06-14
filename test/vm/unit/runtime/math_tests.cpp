@@ -33,9 +33,23 @@ using namespace monad::vm::runtime;
 using namespace monad::vm::compiler::test;
 using namespace monad::vm::runtime;
 
+namespace
+{
+    // `mul` is pinned to MONAD_VM_SYSV_ABI to match its hand-written
+    // assembly implementation (see category/vm/runtime/abi.hpp), so its
+    // pointer type doesn't match the plain function pointer wrap() expects.
+    // Forward through a normal function so wrap() can deduce a compatible
+    // pointer type.
+    constexpr void
+    mul_fwd(uint256_t *r, uint256_t const *a, uint256_t const *b) noexcept
+    {
+        mul(r, a, b);
+    }
+}
+
 TEST_F(RuntimeTest, Mul)
 {
-    auto f = wrap(mul);
+    auto f = wrap(mul_fwd);
 
     ASSERT_EQ(f(10, 10), 100);
     ASSERT_EQ(

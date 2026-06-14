@@ -23,6 +23,7 @@
 
 #include <fstream>
 #include <sstream>
+#include <system_error>
 
 MONAD_NAMESPACE_BEGIN
 
@@ -33,14 +34,14 @@ byte_string read_file(bytes32_t const &id, std::filesystem::path const &dir)
     MONAD_ASSERT_PRINTF(
         std::filesystem::exists(path) && std::filesystem::is_regular_file(path),
         "missing or bad file %s",
-        path.c_str());
+        path.string().c_str());
     std::ifstream is(path);
     MONAD_ASSERT(is);
     byte_string const data{
         std::istreambuf_iterator<char>(is), std::istreambuf_iterator<char>()};
     auto const checksum = to_bytes(blake3(data));
     MONAD_ASSERT_PRINTF(
-        checksum == id, "Checksum failed for file: %s", path.c_str());
+        checksum == id, "Checksum failed for file: %s", path.string().c_str());
     return data;
 }
 
@@ -57,19 +58,20 @@ read_body(bytes32_t const &id, std::filesystem::path const &dir)
 
 bytes32_t head_pointer_to_id(std::filesystem::path const &symlink)
 {
-    char resolved[PATH_MAX] = {};
-    auto const r = readlink(symlink.c_str(), resolved, sizeof(resolved));
-    if (MONAD_UNLIKELY(r == -1)) {
+    std::error_code ec;
+    std::filesystem::path const resolved =
+        std::filesystem::read_symlink(symlink, ec);
+    if (MONAD_UNLIKELY(ec)) {
         return bytes32_t{};
     }
 
-    auto const id_string = std::filesystem::path(resolved).stem().string();
+    auto const id_string = resolved.stem().string();
     auto const decode_res = from_hex(id_string);
     MONAD_ASSERT_PRINTF(
         decode_res.has_value(),
         "Link not hex encoded %s -> %s",
-        symlink.c_str(),
-        resolved);
+        symlink.string().c_str(),
+        resolved.string().c_str());
     byte_string const hex = decode_res.value();
     return to_bytes(hex);
 }

@@ -50,6 +50,10 @@
 #include <utility>
 #include <vector>
 
+#ifdef _WIN32
+    #include <malloc.h> // for _aligned_malloc/_aligned_free
+#endif
+
 namespace runtime = monad::vm::runtime;
 using namespace monad;
 using namespace monad::vm;
@@ -156,14 +160,24 @@ namespace
     {
         void operator()(uint8_t *const p) const
         {
+#ifdef _WIN32
+            ::_aligned_free(p);
+#else
             std::free(p);
+#endif
         }
     } test_stack_memory_deleter;
 
     std::unique_ptr<uint8_t, TestStackMemoryDeleter> test_stack_memory()
     {
         return {
-            reinterpret_cast<uint8_t *>(std::aligned_alloc(32, 32 * 1024)),
+            reinterpret_cast<uint8_t *>(
+#ifdef _WIN32
+                _aligned_malloc(32 * 1024, 32)
+#else
+                std::aligned_alloc(32, 32 * 1024)
+#endif
+                    ),
             test_stack_memory_deleter};
     }
 
@@ -2719,10 +2733,10 @@ TEST(Emitter, eq_same)
 TEST(Emitter, byte)
 {
     asmjit::JitRuntime rt;
-    pure_bin_instr_test(rt, BYTE, &Emitter::byte, 31, 1, 1);
+    pure_bin_instr_test(rt, monad::vm::compiler::BYTE, &Emitter::byte, 31, 1, 1);
     pure_bin_instr_test(
         rt,
-        BYTE,
+        monad::vm::compiler::BYTE,
         &Emitter::byte,
         0,
         {0x3333333333333333,
@@ -2731,17 +2745,17 @@ TEST(Emitter, byte)
          0x8877665544332211},
         0x88);
     pure_bin_instr_test(
-        rt, BYTE, &Emitter::byte, 8, {0, 0, 0x8877665544332211, 0}, 0x88);
+        rt, monad::vm::compiler::BYTE, &Emitter::byte, 8, {0, 0, 0x8877665544332211, 0}, 0x88);
     pure_bin_instr_test(
-        rt, BYTE, &Emitter::byte, 17, {0, 0x8877665544332211, 0, 0}, 0x77);
+        rt, monad::vm::compiler::BYTE, &Emitter::byte, 17, {0, 0x8877665544332211, 0, 0}, 0x77);
     pure_bin_instr_test(
-        rt, BYTE, &Emitter::byte, 26, {0x8877665544332211, 0, 0, 0}, 0x66);
+        rt, monad::vm::compiler::BYTE, &Emitter::byte, 26, {0x8877665544332211, 0, 0, 0}, 0x66);
     pure_bin_instr_test(
-        rt, BYTE, &Emitter::byte, 4, {0, 0, 0, 0x8877665544332211}, 0x44);
-    pure_bin_instr_test(rt, BYTE, &Emitter::byte, 32, {-1, -1, -1, -1}, 0);
+        rt, monad::vm::compiler::BYTE, &Emitter::byte, 4, {0, 0, 0, 0x8877665544332211}, 0x44);
+    pure_bin_instr_test(rt, monad::vm::compiler::BYTE, &Emitter::byte, 32, {-1, -1, -1, -1}, 0);
     pure_bin_instr_test(
         rt,
-        BYTE,
+        monad::vm::compiler::BYTE,
         &Emitter::byte,
         std::numeric_limits<uint256_t>::max(),
         {-1, -1, -1, -1},
@@ -2760,7 +2774,7 @@ TEST(Emitter, byte)
             i | (uint256_t{1} << 255)};
         for (auto const &i : indices) {
             pure_bin_instr_test(
-                rt, BYTE, &Emitter::byte, i, value, byte(i, value));
+                rt, monad::vm::compiler::BYTE, &Emitter::byte, i, value, byte(i, value));
         }
     }
 }

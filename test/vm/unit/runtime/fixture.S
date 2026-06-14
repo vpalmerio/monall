@@ -16,7 +16,9 @@
 // fixture.S
 .text
 .globl tests_trampoline
+#ifdef __ELF__
 .type tests_trampoline, @function
+#endif
 .align 16
 tests_trampoline:
     pushq %rbp

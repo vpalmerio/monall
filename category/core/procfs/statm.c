@@ -20,7 +20,44 @@
 #include <stdbool.h>
 #include <stdio.h>
 
-#include <unistd.h>
+#ifdef _WIN32
+    #include <category/core/compat.h>
+
+    #include <psapi.h>
+#else
+    #include <unistd.h>
+#endif
+
+#ifdef _WIN32
+
+bool monad_procfs_self_statm(
+    long *const size, long *const resident, long *const shared)
+{
+    PROCESS_MEMORY_COUNTERS pmc;
+    if (MONAD_UNLIKELY(
+            !GetProcessMemoryInfo(GetCurrentProcess(), &pmc, sizeof(pmc)))) {
+        return false;
+    }
+    SYSTEM_INFO sysinfo;
+    GetSystemInfo(&sysinfo);
+    long const page_size = (long)sysinfo.dwPageSize;
+    *size = (long)((size_t)pmc.PagefileUsage / (size_t)page_size);
+    *resident = (long)((size_t)pmc.WorkingSetSize / (size_t)page_size);
+    *shared = 0;
+    return true;
+}
+
+long monad_procfs_self_resident()
+{
+    PROCESS_MEMORY_COUNTERS pmc;
+    if (MONAD_UNLIKELY(
+            !GetProcessMemoryInfo(GetCurrentProcess(), &pmc, sizeof(pmc)))) {
+        return -1L;
+    }
+    return (long)pmc.WorkingSetSize;
+}
+
+#else
 
 static long PAGESIZE = 0;
 
@@ -60,3 +97,5 @@ long monad_procfs_self_resident()
 
     return resident * PAGESIZE;
 }
+
+#endif

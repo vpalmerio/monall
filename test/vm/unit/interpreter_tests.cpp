@@ -24,7 +24,18 @@
 
 using namespace monad::vm::interpreter;
 
-using enum monad::vm::compiler::EvmOpCode;
+// Note: not `using enum monad::vm::compiler::EvmOpCode`, since its BYTE
+// enumerator conflicts with the BYTE typedef pulled in by <windows.h>.
+using monad::vm::compiler::ADD;
+using monad::vm::compiler::JUMP;
+using monad::vm::compiler::JUMPDEST;
+using monad::vm::compiler::PUSH0;
+using monad::vm::compiler::PUSH1;
+using monad::vm::compiler::PUSH3;
+using monad::vm::compiler::PUSH4;
+using monad::vm::compiler::RETURN;
+using monad::vm::compiler::SELFDESTRUCT;
+using monad::vm::compiler::SUB;
 
 template <typename... Args>
 auto make_intercode(Args... args)

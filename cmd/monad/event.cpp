@@ -17,6 +17,7 @@
 
 #include <category/core/assert.h>
 #include <category/core/cleanup.h> //NOLINT(misc-include-cleaner)
+#include <category/core/compat.h>
 #include <category/core/config.hpp>
 #include <category/core/event/event_ring.h>
 #include <category/core/event/event_ring_util.h>
@@ -38,14 +39,18 @@
 
 #include <errno.h>
 #include <fcntl.h>
-#include <linux/limits.h>
 #include <signal.h>
 #include <stdio.h>
 #include <string.h>
-#include <sys/file.h>
-#include <sys/mman.h>
+#include <sys/stat.h>
 #include <sys/types.h>
 #include <unistd.h>
+
+#ifndef _WIN32
+    #include <linux/limits.h>
+    #include <sys/file.h>
+    #include <sys/mman.h>
+#endif
 
 namespace fs = std::filesystem;
 
@@ -72,7 +77,7 @@ std::string try_parse_int_token(std::string_view s, I *i)
 int claim_event_ring_file(fs::path const &ring_path)
 {
     int ring_fd [[gnu::cleanup(cleanup_close)]] =
-        open(ring_path.c_str(), O_RDONLY);
+        open(ring_path.string().c_str(), O_RDONLY);
     if (ring_fd == -1) {
         // Inability to open is normal: it means there's no zombie to clean up
         return 0;
@@ -87,24 +92,24 @@ int claim_event_ring_file(fs::path const &ring_path)
             if (owner_pid == 0) {
                 LOG_ERROR(
                     "event ring file `{}` is owned by an unknown other process",
-                    ring_path.c_str());
+                    ring_path.string().c_str());
             }
             else {
                 LOG_ERROR(
                     "event ring file `{}` is owned by pid {}",
-                    ring_path.c_str(),
+                    ring_path.string().c_str(),
                     owner_pid);
             }
             return EWOULDBLOCK;
         }
         LOG_ERROR(
             "flock on event ring file `{}` failed: {} ({})",
-            ring_path.c_str(),
+            ring_path.string().c_str(),
             strerror(saved_errno),
             saved_errno);
         return saved_errno;
     }
-    (void)unlink(ring_path.c_str()); // what we now own is a zombie; destroy it
+    (void)unlink(ring_path.string().c_str()); // what we now own is a zombie; destroy it
     return 0;
 }
 
@@ -117,15 +122,15 @@ int allocate_event_ring_file(
         S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH;
 
     *init_ring_fd =
-        open(init_path.c_str(), O_RDWR | O_CREAT | O_EXCL, CreateMode);
+        open(init_path.string().c_str(), O_RDWR | O_CREAT | O_EXCL, CreateMode);
     if (*init_ring_fd == -1) {
         int const rc = errno;
         LOG_ERROR(
             "could not create event ring temporary initialization file `{}` "
             "(for {}): "
             "{} [{}]",
-            init_path.c_str(),
-            ring_path.c_str(),
+            init_path.string().c_str(),
+            ring_path.string().c_str(),
             strerror(rc),
             rc);
         return rc;
@@ -135,14 +140,14 @@ int allocate_event_ring_file(
         LOG_ERROR(
             "flock on event ring file temporary initialization file `{}` (for "
             "{}) failed: {} ({})",
-            init_path.c_str(),
-            ring_path.c_str(),
+            init_path.string().c_str(),
+            ring_path.string().c_str(),
             strerror(saved_errno),
             saved_errno);
         return saved_errno;
     }
     if (int const rc = monad_event_ring_init_simple(
-            &simple_cfg, *init_ring_fd, 0, init_path.c_str())) {
+            &simple_cfg, *init_ring_fd, 0, init_path.string().c_str())) {
         LOG_ERROR(
             "event library error -- {}", monad_event_ring_get_last_error());
         return rc;
@@ -180,7 +185,7 @@ int create_owned_event_ring(
 {
     fs::path init_file_path = ring_file_path;
     init_file_path.replace_filename(
-        std::format("{}.{}", ring_file_path.filename().c_str(), getpid()));
+        std::format("{}.{}", ring_file_path.filename().string().c_str(), getpid()));
 
     if (int const rc = claim_event_ring_file(ring_file_path)) {
         return rc;
@@ -188,22 +193,22 @@ int create_owned_event_ring(
 
     if (int const rc = allocate_event_ring_file(
             simple_cfg, init_file_path, ring_file_path, ring_fd)) {
-        (void)unlink(init_file_path.c_str());
+        (void)unlink(init_file_path.string().c_str());
         return rc;
     }
 
     if (renameat2(
             AT_FDCWD,
-            init_file_path.c_str(),
+            init_file_path.string().c_str(),
             AT_FDCWD,
-            ring_file_path.c_str(),
+            ring_file_path.string().c_str(),
             RENAME_NOREPLACE) == -1) {
         int const rc = errno;
-        (void)unlink(init_file_path.c_str());
+        (void)unlink(init_file_path.string().c_str());
         LOG_ERROR(
             "rename of {} -> {} failed: {} [{}]",
-            init_file_path.c_str(),
-            ring_file_path.c_str(),
+            init_file_path.string().c_str(),
+            ring_file_path.string().c_str(),
             strerror(rc),
             rc);
         return rc;
@@ -220,6 +225,7 @@ int create_owned_event_ring_nointr(
     fs::path const &ring_file_path,
     monad_event_ring_simple_config const &simple_cfg, int *const ring_fd)
 {
+#ifndef _WIN32
     sigset_t to_block;
     sigset_t old_mask;
 
@@ -227,8 +233,11 @@ int create_owned_event_ring_nointr(
     sigaddset(&to_block, SIGINT);
     sigaddset(&to_block, SIGTERM);
     sigprocmask(SIG_BLOCK, &to_block, &old_mask);
+#endif
     int const rc = create_owned_event_ring(ring_file_path, simple_cfg, ring_fd);
+#ifndef _WIN32
     sigprocmask(SIG_SETMASK, &old_mask, nullptr);
+#endif
     return rc;
 }
 

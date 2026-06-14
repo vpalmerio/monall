@@ -19,6 +19,10 @@
 
 #include <cstdlib>
 
+#ifdef _WIN32
+    #include <malloc.h> // for _aligned_malloc/_aligned_free
+#endif
+
 namespace monad::vm::test
 {
     struct TestMemory
@@ -29,7 +33,12 @@ namespace monad::vm::test
 
         TestMemory()
             : data{reinterpret_cast<std::uint8_t *>(
-                  std::aligned_alloc(32, capacity))}
+#ifdef _WIN32
+                  _aligned_malloc(capacity, 32)
+#else
+                  std::aligned_alloc(32, capacity)
+#endif
+                      )}
         {
             MONAD_ASSERT(data != nullptr);
             static_assert((capacity & 31) == 0);
@@ -43,7 +52,11 @@ namespace monad::vm::test
 
         ~TestMemory()
         {
+#ifdef _WIN32
+            ::_aligned_free(data);
+#else
             std::free(data);
+#endif
         }
     };
 }

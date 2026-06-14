@@ -48,6 +48,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cinttypes>
 #include <memory>
 #include <vector>
 
@@ -66,7 +67,7 @@ void log_tps(
         static_cast<uint64_t>(
             std::chrono::duration_cast<std::chrono::microseconds>(now - begin)
                 .count()),
-        1UL); // for the unlikely case that elapsed < 1 mic
+        uint64_t{1}); // for the unlikely case that elapsed < 1 mic
     uint64_t const tps = (ntxs) * 1'000'000 / elapsed;
     uint64_t const gps = gas / elapsed;
 
@@ -246,14 +247,14 @@ Result<void> process_ethereum_block(
         commit_time,
         block_time,
         block.transactions.size() * 1'000'000 /
-            (uint64_t)std::max(1L, block_metrics.tx_exec_time.count()),
+            (uint64_t)std::max(int64_t{1}, block_metrics.tx_exec_time.count()),
         block.transactions.size() * 1'000'000 /
-            (uint64_t)std::max(1L, block_time.count()),
+            (uint64_t)std::max(int64_t{1}, block_time.count()),
         exec_output.eth_header.gas_used,
         exec_output.eth_header.gas_used /
-            (uint64_t)std::max(1L, block_metrics.tx_exec_time.count()),
+            (uint64_t)std::max(int64_t{1}, block_metrics.tx_exec_time.count()),
         exec_output.eth_header.gas_used /
-            (uint64_t)std::max(1L, block_time.count()),
+            (uint64_t)std::max(int64_t{1}, block_time.count()),
         db.print_stats(),
         vm.print_and_reset_block_counts(),
         vm.print_compiler_stats());
@@ -293,7 +294,7 @@ Result<std::pair<uint64_t, uint64_t>> runloop_ethereum(
         Block block;
         MONAD_ASSERT_PRINTF(
             block_db.get(block_num, block),
-            "Could not query %lu from blockdb",
+            "Could not query %" PRIu64 " from blockdb",
             block_num);
 
         bytes32_t const block_id = bytes32_t{block.header.number};
