@@ -205,12 +205,18 @@ if(WIN32)
 endif()
 
 target_include_directories(monad_core PRIVATE "${THIRD_PARTY_DIR}/openssl")
-if(${CMAKE_SYSTEM_PROCESSOR} MATCHES "x86_64|AMD64" AND NOT WIN32)
+if(${CMAKE_SYSTEM_PROCESSOR} MATCHES "x86_64|AMD64")
+  # keccak_impl.S selects keccak1600-avx2.S (default haswell toolchain) or
+  # keccak1600-avx512.S (skylake-avx512 toolchain). Both are ELF-syntax
+  # (.type/.size directives) and System V ABI (rdi/rsi/rdx/rcx args,
+  # rdi/rsi/ymm0-15 all caller-saved). On Windows, keccak1600-avx2.S is
+  # patched: ELF-only directives are guarded with #ifdef __ELF__, and a small
+  # Microsoft x64 ABI trampoline (args in rcx/rdx/r8/r9, rdi/rsi/ymm6-15
+  # callee-saved) wraps each SHA3_absorb/SHA3_squeeze entry point.
+  # keccak1600-avx512.S has NOT been patched yet, so the avx512 toolchain is
+  # not supported on Windows.
   target_sources(monad_core PRIVATE "keccak_impl.S")
 else()
-  # The hand-written keccak1600 assembly uses ELF-specific GAS directives
-  # (e.g. `.type foo,@function`) that mingw's COFF assembler rejects, so use
-  # the portable C implementation on Windows.
   target_sources(monad_core
                  PRIVATE "${THIRD_PARTY_DIR}/openssl/crypto/sha/keccak1600.c")
 endif()

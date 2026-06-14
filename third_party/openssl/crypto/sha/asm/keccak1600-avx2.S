@@ -1,6 +1,8 @@
 .text
 
+#ifdef __ELF__
 .type	__KeccakF1600,@function
+#endif
 .align	32
 __KeccakF1600:
 	lea		rhotates_left+96(%rip),%r8
@@ -148,11 +150,22 @@ __KeccakF1600:
 	jnz		.Loop_avx2
 
 	ret
+#ifdef __ELF__
 .size	__KeccakF1600,.-__KeccakF1600
+#endif
+#ifdef __ELF__
 .globl	SHA3_absorb
 .type	SHA3_absorb,@function
 .align	32
 SHA3_absorb:
+#else
+# Microsoft x64 calling convention (rcx/rdx/r8/r9, rdi/rsi/ymm6-15
+# non-volatile) entry point is provided by the SHA3_absorb trampoline
+# near the end of this file, which adapts to this System V (rdi/rsi/rdx/rcx)
+# implementation.
+.align	32
+__SHA3_absorb_sysv:
+#endif
 	mov	%rsp,%r11
 
 	lea	-240(%rsp),%rsp
@@ -298,12 +311,21 @@ SHA3_absorb:
 	lea	(%r11),%rsp
 	lea	(%rdx,%rcx),%rax		# return value
 	ret
+#ifdef __ELF__
 .size	SHA3_absorb,.-SHA3_absorb
+#endif
 
+#ifdef __ELF__
 .globl	SHA3_squeeze
 .type	SHA3_squeeze,@function
 .align	32
 SHA3_squeeze:
+#else
+# Microsoft x64 calling convention entry point is provided by the
+# SHA3_squeeze trampoline near the end of this file (see SHA3_absorb above).
+.align	32
+__SHA3_squeeze_sysv:
+#endif
 	mov	%rsp,%r11
 
 	lea	96(%rdi),%rdi
@@ -553,7 +575,95 @@ SHA3_squeeze:
 
 	lea	(%r11),%rsp
 	ret
+#ifdef __ELF__
 .size	SHA3_squeeze,.-SHA3_squeeze
+#endif
+
+#ifndef __ELF__
+# Microsoft x64 ABI trampolines for __SHA3_absorb_sysv/__SHA3_squeeze_sysv
+# above (both written for the System V AMD64 ABI: args in rdi/rsi/rdx/rcx,
+# rdi/rsi/ymm0-15 all caller-saved/volatile, and clobbered freely).
+# Under the Microsoft x64 ABI used by mingw, args arrive in
+# rcx/rdx/r8/(r9), and rdi, rsi, and the upper halves of ymm6-ymm15 are
+# non-volatile, so we save them, remap the argument registers, call the
+# System V implementation, and restore everything before returning.
+# SHA3_squeeze's 5th argument (`next`) is intentionally not passed through:
+# the System V implementation never reads it (keccak256 always squeezes
+# exactly once, i.e. next == 0).
+.align	32
+.globl	SHA3_absorb
+SHA3_absorb:
+	push	%rdi
+	push	%rsi
+	sub	$0x148,%rsp
+	vmovdqu	%ymm6,0x00(%rsp)
+	vmovdqu	%ymm7,0x20(%rsp)
+	vmovdqu	%ymm8,0x40(%rsp)
+	vmovdqu	%ymm9,0x60(%rsp)
+	vmovdqu	%ymm10,0x80(%rsp)
+	vmovdqu	%ymm11,0xa0(%rsp)
+	vmovdqu	%ymm12,0xc0(%rsp)
+	vmovdqu	%ymm13,0xe0(%rsp)
+	vmovdqu	%ymm14,0x100(%rsp)
+	vmovdqu	%ymm15,0x120(%rsp)
+	mov	%rcx,%rdi
+	mov	%rdx,%rsi
+	mov	%r8,%rdx
+	mov	%r9,%rcx
+	call	__SHA3_absorb_sysv
+	vmovdqu	0x00(%rsp),%ymm6
+	vmovdqu	0x20(%rsp),%ymm7
+	vmovdqu	0x40(%rsp),%ymm8
+	vmovdqu	0x60(%rsp),%ymm9
+	vmovdqu	0x80(%rsp),%ymm10
+	vmovdqu	0xa0(%rsp),%ymm11
+	vmovdqu	0xc0(%rsp),%ymm12
+	vmovdqu	0xe0(%rsp),%ymm13
+	vmovdqu	0x100(%rsp),%ymm14
+	vmovdqu	0x120(%rsp),%ymm15
+	vzeroupper
+	add	$0x148,%rsp
+	pop	%rsi
+	pop	%rdi
+	ret
+
+.align	32
+.globl	SHA3_squeeze
+SHA3_squeeze:
+	push	%rdi
+	push	%rsi
+	sub	$0x148,%rsp
+	vmovdqu	%ymm6,0x00(%rsp)
+	vmovdqu	%ymm7,0x20(%rsp)
+	vmovdqu	%ymm8,0x40(%rsp)
+	vmovdqu	%ymm9,0x60(%rsp)
+	vmovdqu	%ymm10,0x80(%rsp)
+	vmovdqu	%ymm11,0xa0(%rsp)
+	vmovdqu	%ymm12,0xc0(%rsp)
+	vmovdqu	%ymm13,0xe0(%rsp)
+	vmovdqu	%ymm14,0x100(%rsp)
+	vmovdqu	%ymm15,0x120(%rsp)
+	mov	%rcx,%rdi
+	mov	%rdx,%rsi
+	mov	%r8,%rdx
+	mov	%r9,%rcx
+	call	__SHA3_squeeze_sysv
+	vmovdqu	0x00(%rsp),%ymm6
+	vmovdqu	0x20(%rsp),%ymm7
+	vmovdqu	0x40(%rsp),%ymm8
+	vmovdqu	0x60(%rsp),%ymm9
+	vmovdqu	0x80(%rsp),%ymm10
+	vmovdqu	0xa0(%rsp),%ymm11
+	vmovdqu	0xc0(%rsp),%ymm12
+	vmovdqu	0xe0(%rsp),%ymm13
+	vmovdqu	0x100(%rsp),%ymm14
+	vmovdqu	0x120(%rsp),%ymm15
+	vzeroupper
+	add	$0x148,%rsp
+	pop	%rsi
+	pop	%rdi
+	ret
+#endif
 
 .section .rodata
 .align	64
