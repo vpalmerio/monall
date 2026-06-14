@@ -16,6 +16,7 @@
 #include <category/core/assert.h>
 #include <category/core/compat.h>
 
+#include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -29,6 +30,33 @@ extern char const *__progname; // NOLINT(bugprone-reserved-identifier)
 // mingw has no equivalent, so provide the one definition for the whole
 // link here.
 char const *__progname = "monad";
+
+// mingw-w64's import library for msvcrt.dll still exports calloc(), while
+// malloc()/free()/realloc() are redirected to ucrtbase.dll. mingw's
+// tls_atexit bookkeeping (used by thread_local destructors) allocates via
+// calloc() but frees via free(), so a calloc() that resolves to msvcrt's
+// heap corrupts ucrtbase's heap on free(). Provide a calloc() that goes
+// through ucrtbase's malloc() instead.
+//
+// malloc() is called through a function pointer rather than directly:
+// GCC's tree-ssa-strlen pass recognizes the malloc()+memset(0) idiom below
+// and rewrites it back into a call to calloc() -- since this function *is*
+// calloc(), that produces infinite self-recursion. The indirect call
+// prevents that pattern match.
+void *calloc(size_t const nmemb, size_t const size)
+{
+    size_t total;
+    if (__builtin_mul_overflow(nmemb, size, &total)) {
+        errno = ENOMEM;
+        return nullptr;
+    }
+    static void *(*volatile const malloc_fn)(size_t) = malloc;
+    void *const p = malloc_fn(total);
+    if (p != nullptr) {
+        memset(p, 0, total);
+    }
+    return p;
+}
 #endif
 
 extern void monad_stack_backtrace_capture_and_print(
