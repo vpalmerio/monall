@@ -35,8 +35,13 @@
 
 #ifdef _WIN32
     #include <category/core/compat.h> // for PROT_*/MAP_* shims
+    // win.ini is a small text file guaranteed to exist on Windows; used as
+    // the Windows stand-in for "/etc/passwd", i.e. a file that definitely
+    // exists and is not an event-ring snapshot
+    #define NON_SNAPSHOT_FILE "C:\\Windows\\win.ini"
 #else
     #include <sys/mman.h>
+    #define NON_SNAPSHOT_FILE "/etc/passwd"
 #endif
 
 #include <gtest/gtest.h>
@@ -58,9 +63,10 @@ TEST(EventSnapshotTest, IsSnapshot)
     EXPECT_TRUE(is_snapshot);
     close(fd);
 
-    fd = open("/etc/passwd", O_RDONLY);
+    fd = open(NON_SNAPSHOT_FILE, O_RDONLY);
     ASSERT_NE(fd, -1);
-    ASSERT_EQ(0, monad_event_is_snapshot_file(fd, "/etc/passwd", &is_snapshot));
+    ASSERT_EQ(
+        0, monad_event_is_snapshot_file(fd, NON_SNAPSHOT_FILE, &is_snapshot));
     EXPECT_FALSE(is_snapshot);
     close(fd);
 }
@@ -100,11 +106,11 @@ TEST(EventSnapshotTest, Decompress)
     // Open a non-snapshot file, check that decompression returns EPROTO
     // (our conventional "wrong format" error code)
     close(fd_in);
-    fd_in = open("/etc/passwd", O_RDONLY);
+    fd_in = open(NON_SNAPSHOT_FILE, O_RDONLY);
     ASSERT_EQ(
         EPROTO,
         monad_event_decompress_snapshot_fd(
-            fd_in, MONAD_EVENT_NO_MAX_SIZE, "/etc/passwd", &fd_out));
+            fd_in, MONAD_EVENT_NO_MAX_SIZE, NON_SNAPSHOT_FILE, &fd_out));
     ASSERT_EQ(-1, fd_out);
     close(fd_in);
 }

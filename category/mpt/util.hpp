@@ -315,8 +315,12 @@ inline UnsignedInteger deserialize_from_big_endian(NibblesView const in)
             "equal to sizeof output type\n");
     }
     UnsignedInteger out = 0;
+    // Shift in UnsignedInteger (not `1UL`): on LLP64 platforms (Windows),
+    // `unsigned long` is 32 bits, so `1UL << 60` (the uint64_t, 16-nibble
+    // case) is UB/truncated. Shifting the target type directly always has
+    // enough width for its own maximum nibble count.
     UnsignedInteger bit = static_cast<UnsignedInteger>(
-        1UL << (std::max((in.nibble_size() - 1), 0) * 4));
+        UnsignedInteger{1} << (std::max((in.nibble_size() - 1), 0) * 4));
     for (auto i = 0; i < in.nibble_size(); ++i, bit >>= 4) {
         out += static_cast<UnsignedInteger>(
             in.get(static_cast<unsigned char>(i)) * bit);

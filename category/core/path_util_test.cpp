@@ -13,7 +13,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-#include <cstdio>
+#include <iostream>
 
 #include <gtest/gtest.h>
 
@@ -51,7 +51,12 @@ TEST(PathUtil, Basic)
         AT_FDCWD, TEST_DIR, S_IRWXU, &dirfd, pathbuf, sizeof pathbuf);
     ASSERT_EQ(rc, 0);
     ASSERT_NE(dirfd, -1);
-    std::fprintf(stderr, "full path is: %s\n", pathbuf);
+    // Use iostream rather than cstdio's fprintf here: on this mingw build,
+    // fprintf(stderr, ...) crashes inside _lock_file when this binary is
+    // linked against the system msvcrt.dll's _lock (a stale CRT pulled in by
+    // some dependency), whose tiny static _iob[] table doesn't recognize
+    // ucrt's stderr FILE* and indexes out of bounds.
+    std::cerr << "full path is: " << pathbuf << "\n";
     (void)close(dirfd);
 
     // Try again; we can't create it, but that's OK: it's there now

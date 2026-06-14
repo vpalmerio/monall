@@ -357,6 +357,26 @@ int monad_event_ring_mmap(
                 error_name);
             goto Error;
         }
+        // MapViewOfFile3 with MEM_REPLACE_PLACEHOLDER requires the view
+        // (payload_offset .. payload_offset + payload_size) to be fully
+        // covered by the section; unlike mmap() on Linux, it does not
+        // tolerate a view that extends a few bytes past EOF within the
+        // final page. Decompressed snapshot files can be slightly shorter
+        // than the ring's nominal total size (trailing zero bytes elided by
+        // the snapshot writer), so grow the file here if needed.
+        {
+            LARGE_INTEGER cur_size;
+            uint64_t const needed_size =
+                (uint64_t)payload_offset + (uint64_t)payload_size;
+            if (GetFileSizeEx(ring_file, &cur_size) &&
+                (uint64_t)cur_size.QuadPart < needed_size) {
+                LARGE_INTEGER new_size;
+                new_size.QuadPart = (LONGLONG)needed_size;
+                if (SetFilePointerEx(ring_file, new_size, nullptr, FILE_BEGIN)) {
+                    SetEndOfFile(ring_file);
+                }
+            }
+        }
         payload_file_mapping = CreateFileMappingA(
             ring_file, nullptr, payload_protect, 0, 0, nullptr);
         if (payload_file_mapping == nullptr) {

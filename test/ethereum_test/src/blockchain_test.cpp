@@ -717,6 +717,11 @@ void register_blockchain_tests_path(
             // get rid of minus signs, which is a special symbol when used in
             // filtering
             std::ranges::replace(test_name, '-', '_');
+            // fs::path::string() uses '\' as the separator on Windows, but
+            // the exclusion lists in test/ethereum_test/exclude/*.cmake are
+            // written with '/'; normalize so those filters match on both
+            // platforms.
+            std::ranges::replace(test_name, '\\', '/');
 
             testing::RegisterTest(
                 "BlockchainTests",

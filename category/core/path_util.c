@@ -97,11 +97,12 @@ int monad_path_open_subdir(
     }
 
     if (init_dirfd == AT_FDCWD) {
+        // Always start empty: the per-component loop below prepends a '/'
+        // before each component itself, so pre-seeding curpath with "/" for
+        // absolute paths would produce a leading "//", which Windows parses
+        // as a UNC path (\\server\share) rather than a drive-root-relative
+        // path.
         curpath_len = 0;
-        if (*path_suffix == '/') {
-            curpath[0] = '/';
-            curpath_len = 1;
-        }
         curpath[curpath_len] = '\0';
     }
     else {
