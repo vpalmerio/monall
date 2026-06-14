@@ -23,8 +23,14 @@
 extern size_t
 SHA3_absorb(uint64_t A[5][5], unsigned char const *inp, size_t len, size_t r);
 
-extern void
-SHA3_squeeze(uint64_t A[5][5], unsigned char *out, size_t len, size_t r);
+// `next` distinguishes the first SHA3_squeeze call (0) from subsequent
+// calls on the same state (1); keccak256 only ever squeezes once, so it is
+// always 0. The portable C implementation (keccak1600.c, used on Windows)
+// takes this 5th parameter, but the hand-written asm (keccak_impl.S, used on
+// Linux) only takes 4 and ignores any extra argument, so passing it
+// explicitly is safe on both.
+extern void SHA3_squeeze(
+    uint64_t A[5][5], unsigned char *out, size_t len, size_t r, int next);
 
 void keccak256(
     unsigned char const *const in, unsigned long const len,
@@ -44,5 +50,5 @@ void keccak256(
     blk[BLOCK_SIZE - 1] |= 0x80;
     (void)SHA3_absorb(A, blk, BLOCK_SIZE, BLOCK_SIZE);
 
-    SHA3_squeeze(A, out, 32, BLOCK_SIZE);
+    SHA3_squeeze(A, out, 32, BLOCK_SIZE, 0);
 }
