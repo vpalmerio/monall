@@ -32,14 +32,18 @@ add_library(
   "detail/connected_operation_storage.hpp"
   "detail/scope_polyfill.hpp"
   "erased_connected_operation.hpp"
-  "io.cpp"
   "io.hpp"
   "io_senders.hpp"
   "sender_errc.hpp"
-  "storage_pool.cpp"
   "storage_pool.hpp"
-  "util.cpp"
   "util.hpp")
+
+if(WIN32)
+  target_sources(monad_async PRIVATE "io_windows.cpp" "storage_pool_windows.cpp"
+                                      "util_windows.cpp")
+else()
+  target_sources(monad_async PRIVATE "io.cpp" "storage_pool.cpp" "util.cpp")
+endif()
 
 target_include_directories(monad_async PUBLIC ${CATEGORY_MAIN_DIR})
 monad_compile_options(monad_async)

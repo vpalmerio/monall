@@ -41,6 +41,10 @@
 
 #include <stdio.h>
 
+#ifdef _WIN32
+    #include <category/core/compat.h>
+#endif
+
 #include <silkpre/precompile.h>
 #include <silkpre/sha256.h>
 

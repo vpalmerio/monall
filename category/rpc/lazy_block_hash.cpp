@@ -42,7 +42,7 @@ uint64_t LazyBlockHash::n() const
 
 bytes32_t const &LazyBlockHash::get(uint64_t const n) const
 {
-    MONAD_ASSERT_PRINTF(n < n_ && n + N >= n_, "n_=%lu, n=%lu", n_, n);
+    MONAD_ASSERT_PRINTF(n < n_ && n + N >= n_, "n_=%llu, n=%llu", n_, n);
     if (Cache::ConstAccessor acc; blockhash_cache_.find(acc, n)) {
         return acc->second->val;
     }

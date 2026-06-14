@@ -23,7 +23,9 @@
 #include <category/statesync/statesync_protocol.hpp>
 
 #include <deque>
-#include <sys/sysinfo.h>
+#ifndef _WIN32
+    #include <sys/sysinfo.h>
+#endif
 
 using namespace monad;
 using namespace monad::mpt;

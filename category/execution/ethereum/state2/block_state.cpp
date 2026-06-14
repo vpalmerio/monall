@@ -138,7 +138,7 @@ vm::SharedVarcode BlockState::read_code(bytes32_t const &code_hash)
         MONAD_ASSERT(result);
         MONAD_ASSERT_PRINTF(
             code_hash == NULL_HASH || result->size() != 0,
-            "code_hash %s, code size %zu, block_number %lu",
+            "code_hash %s, code size %zu, block_number %llu",
             fmt::format("{}", code_hash).c_str(),
             result->size(),
             db_.get_block_number());

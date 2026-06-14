@@ -365,10 +365,12 @@ bool monad_db_dump_snapshot(
     using namespace monad::mpt;
 
     MONAD_ASSERT_PRINTF(
-        total_shards >= 1, "total_shards must be >= 1, got %lu", total_shards);
+        total_shards >= 1,
+        "total_shards must be >= 1, got %llu",
+        total_shards);
     MONAD_ASSERT_PRINTF(
         shard_number < total_shards,
-        "shard_number (%lu) must be < total_shards (%lu)",
+        "shard_number (%llu) must be < total_shards (%llu)",
         shard_number,
         total_shards);
 

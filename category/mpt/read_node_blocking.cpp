@@ -25,7 +25,13 @@
 #include <errno.h>
 #include <stdlib.h>
 #include <string.h>
-#include <unistd.h>
+
+#ifdef _WIN32
+    #include <category/core/compat.h>
+    #include <malloc.h> // for _aligned_malloc/_aligned_free
+#else
+    #include <unistd.h>
+#endif
 
 MONAD_MPT_NAMESPACE_BEGIN
 
@@ -49,9 +55,18 @@ Node::SharedPtr read_node_blocking(
         round_down_align<DISK_PAGE_BITS>(node_offset.offset);
     uint16_t const buffer_off = uint16_t(node_offset.offset - rd_offset);
     auto *buffer =
+#ifdef _WIN32
+        (unsigned char *)_aligned_malloc(bytes_to_read, DISK_PAGE_SIZE);
+#else
         (unsigned char *)aligned_alloc(DISK_PAGE_SIZE, bytes_to_read);
-    auto const unbuffer =
-        make_scope_exit([buffer]() noexcept { ::free(buffer); });
+#endif
+    auto const unbuffer = make_scope_exit([buffer]() noexcept {
+#ifdef _WIN32
+        ::_aligned_free(buffer);
+#else
+        ::free(buffer);
+#endif
+    });
 
     auto const &chunk = pool.chunk(pool.seq, node_offset.id);
     auto const fd = chunk.read_fd();

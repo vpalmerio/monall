@@ -29,8 +29,13 @@
 #include <filesystem>
 #include <format>
 #include <fstream>
-#include <linux/mman.h>
-#include <sys/mman.h>
+
+#ifdef _WIN32
+    #include <category/core/compat.h>
+#else
+    #include <linux/mman.h>
+    #include <sys/mman.h>
+#endif
 
 MONAD_ANONYMOUS_NAMESPACE_BEGIN
 
@@ -66,7 +71,7 @@ monad_db_snapshot_filesystem_write_user_context_create(
     MONAD_ASSERT_PRINTF(
         std::filesystem::create_directories(snapshot),
         "snapshot failed, %s already exists!",
-        snapshot.c_str());
+        snapshot.string().c_str());
     return new monad_db_snapshot_filesystem_write_user_context{snapshot};
 }
 
@@ -103,12 +108,16 @@ uint64_t monad_db_snapshot_write_filesystem(
             std::filesystem::path const output = shard_dir / files[i];
             foutput.open(output, std::ios::binary | std::ios::out);
             std::filesystem::path const checksum{
-                std::format("{}.blake3", output.c_str())};
+                std::format("{}.blake3", output.string())};
             fchecksum.open(checksum, std::ios::out);
             MONAD_ASSERT_PRINTF(
-                foutput.is_open(), "failed to open %s", output.c_str());
+                foutput.is_open(),
+                "failed to open %s",
+                output.string().c_str());
             MONAD_ASSERT_PRINTF(
-                fchecksum.is_open(), "failed to open %s", checksum.c_str());
+                fchecksum.is_open(),
+                "failed to open %s",
+                checksum.string().c_str());
             blake3_hasher_init(&hasher);
         }
     }
@@ -135,10 +144,10 @@ void monad_db_snapshot_load_filesystem(
     auto const do_mmap = [](std::filesystem::path const file) {
         using namespace monad;
         MONAD_ASSERT(std::filesystem::is_regular_file(file));
-        int fd = open(file.c_str(), O_RDONLY);
+        int fd = open(file.string().c_str(), O_RDONLY);
         MONAD_ASSERT(fd != -1);
 
-        unsigned long const size = std::filesystem::file_size(file);
+        size_t const size = std::filesystem::file_size(file);
         void *data = nullptr;
         if (size) {
             data = mmap(nullptr, size, PROT_READ, MAP_SHARED, fd, 0);
@@ -147,11 +156,11 @@ void monad_db_snapshot_load_filesystem(
             MONAD_ASSERT(madvise(data, size, MADV_SEQUENTIAL) == 0);
 
             std::filesystem::path const checksum{
-                std::format("{}.blake3", file.c_str())};
+                std::format("{}.blake3", file.string())};
             MONAD_ASSERT_PRINTF(
                 std::filesystem::is_regular_file(checksum),
                 "missing checksum file %s",
-                checksum.c_str());
+                checksum.string().c_str());
             std::ifstream t(checksum);
             std::stringstream buffer;
             buffer << t.rdbuf();
@@ -162,7 +171,7 @@ void monad_db_snapshot_load_filesystem(
                 stored_hash == calculated_hash,
                 "calculated checksum does not match stored checksum for file "
                 "%s",
-                file.c_str());
+                file.string().c_str());
         }
         return std::make_tuple(
             fd, reinterpret_cast<unsigned char const *>(data), size);

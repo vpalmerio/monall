@@ -264,7 +264,10 @@ namespace
             return rlp_bytes; // embedded inline
         }
         unsigned char hash[32];
-        keccak256(rlp_bytes.data(), rlp_bytes.size(), hash);
+        keccak256(
+            rlp_bytes.data(),
+            static_cast<unsigned long>(rlp_bytes.size()),
+            hash);
         return rlp::encode_string2(byte_string_view{hash, 32});
     }
 

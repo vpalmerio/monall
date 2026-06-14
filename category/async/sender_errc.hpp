@@ -148,15 +148,44 @@ public:
 
     static inline constexpr sender_errc_with_payload_code_domain_ const &get();
 
+    // Boost.Outcome rewrote status_code_domain's virtual interface to a
+    // "vtable args" ABI (e.g. Boost.Outcome 2.2.9, as shipped by MSYS2's
+    // mingw-w64-boost): name(), payload_info(), _generic_code() and
+    // _do_message() became non-virtual functions delegating to new
+    // pure-virtual _do_name(), _do_payload_info(), _do_generic_code() and
+    // _do_message(_vtable_message_args&) overrides.
+#if BOOST_OUTCOME_VERSION_MAJOR > 2 ||                                         \
+    (BOOST_OUTCOME_VERSION_MAJOR == 2 && BOOST_OUTCOME_VERSION_MINOR > 2) ||   \
+    (BOOST_OUTCOME_VERSION_MAJOR == 2 && BOOST_OUTCOME_VERSION_MINOR == 2 &&   \
+     BOOST_OUTCOME_VERSION_PATCH >= 9)
+    #define MONAD_ASYNC_STATUS_CODE_DOMAIN_VTABLE_ARGS_API 1
+#else
+    #define MONAD_ASYNC_STATUS_CODE_DOMAIN_VTABLE_ARGS_API 0
+#endif
+
+#if MONAD_ASYNC_STATUS_CODE_DOMAIN_VTABLE_ARGS_API
+    virtual int _do_name(_vtable_name_args &args) const noexcept override
+    {
+        args.ret = string_ref("sender_errc domain");
+        return 0;
+    }
+
+    virtual void
+    _do_payload_info(_vtable_payload_info_args &args) const noexcept override
+    {
+        args.ret = {
+            sizeof(value_type),
+            sizeof(status_code_domain *) + sizeof(value_type),
+            (alignof(value_type) > alignof(status_code_domain *))
+                ? alignof(value_type)
+                : alignof(status_code_domain *)};
+    }
+#else
     virtual string_ref name() const noexcept override
     {
         return string_ref("sender_errc domain");
     }
 
-#if BOOST_OUTCOME_VERSION_MAJOR > 2 ||                                         \
-    (BOOST_OUTCOME_VERSION_MAJOR == 2 && BOOST_OUTCOME_VERSION_MINOR > 2) ||   \
-    (BOOST_OUTCOME_VERSION_MAJOR == 2 && BOOST_OUTCOME_VERSION_MAJOR == 2 &&   \
-     BOOST_OUTCOME_VERSION_PATCH > 2)
     virtual base_::payload_info_t payload_info() const noexcept override
     {
         return {
@@ -203,6 +232,34 @@ protected:
         return false;
     }
 
+#if MONAD_ASYNC_STATUS_CODE_DOMAIN_VTABLE_ARGS_API
+    virtual void
+    _do_generic_code(_vtable_generic_code_args &args) const noexcept override
+    {
+        MONAD_ASSERT(args.code.domain() == *this);
+        args.ret = errc::unknown;
+    }
+
+    virtual int
+    _do_message(_vtable_message_args &args) const noexcept override
+    {
+        MONAD_ASSERT(args.code.domain() == *this);
+        auto const &c =
+            static_cast<sender_errc_with_payload_code const &>(args.code);
+        switch (sender_errc(c.value().code)) {
+        case sender_errc::initiation_immediately_completed:
+            args.ret = string_ref("initiation_immediately_completed");
+            return 0;
+        case sender_errc::operation_must_be_reinitiated:
+            args.ret = string_ref("operation_must_be_reinitiated");
+            return 0;
+        case sender_errc::unknown:
+            break;
+        }
+        args.ret = string_ref("unknown");
+        return 0;
+    }
+#else
     virtual BOOST_OUTCOME_SYSTEM_ERROR2_NAMESPACE::generic_code _generic_code(
         const BOOST_OUTCOME_SYSTEM_ERROR2_NAMESPACE::status_code<void> &code)
         const noexcept override
@@ -229,6 +286,9 @@ protected:
         }
         return string_ref("unknown");
     }
+#endif
+
+#undef MONAD_ASYNC_STATUS_CODE_DOMAIN_VTABLE_ARGS_API
 
     BOOST_OUTCOME_SYSTEM_ERROR2_NORETURN virtual void _do_throw_exception(
         const BOOST_OUTCOME_SYSTEM_ERROR2_NAMESPACE::status_code<void> &code)

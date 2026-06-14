@@ -33,7 +33,7 @@
 MONAD_NAMESPACE_BEGIN
 
 BlockDb::BlockDb(std::filesystem::path const &dir)
-    : db_{dir.c_str()}
+    : db_{dir.string().c_str()}
 {
 }
 
@@ -113,7 +113,9 @@ void RlpBlockDb::import_rlp(std::filesystem::path const &rlp_path)
 {
     std::ifstream file(rlp_path, std::ios::binary);
     MONAD_ASSERT_PRINTF(
-        file.is_open(), "Failed to open RLP file: %s", rlp_path.c_str());
+        file.is_open(),
+        "Failed to open RLP file: %s",
+        rlp_path.string().c_str());
     std::vector<uint8_t> data(
         (std::istreambuf_iterator<char>(file)),
         std::istreambuf_iterator<char>());
@@ -125,7 +127,7 @@ void RlpBlockDb::import_rlp(std::filesystem::path const &rlp_path)
             !result.has_error(),
             "Failed to decode RLP block at offset %zu in %s",
             data.size() - view.size(),
-            rlp_path.c_str());
+            rlp_path.string().c_str());
         rlp_blocks_.emplace_back(std::move(result.value()));
     }
 }
@@ -141,7 +143,7 @@ bool RlpBlockDb::get(uint64_t const num, Block &block) const
             if (idx < rlp_blocks_.size()) {
                 MONAD_ASSERT_PRINTF(
                     rlp_blocks_[idx].header.number == num,
-                    "RLP block number mismatch: expected %lu, got %lu "
+                    "RLP block number mismatch: expected %llu, got %llu "
                     "(non-contiguous blocks?)",
                     num,
                     rlp_blocks_[idx].header.number);

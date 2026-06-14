@@ -31,7 +31,12 @@
 #include <cstdint>
 #include <cstring>
 #include <span>
-#include <sys/mman.h>
+
+#ifdef _WIN32
+    #include <category/core/compat.h>
+#else
+    #include <sys/mman.h>
+#endif
 
 MONAD_MPT_NAMESPACE_BEGIN
 
@@ -106,7 +111,7 @@ public:
             MONAD_ASSERT_PRINTF(
                 capacity_ == 0 ||
                     capacity_ == 1ULL << (63 - std::countl_zero(capacity_)),
-                "root offsets capacity %lu is not a power of 2",
+                "root offsets capacity %zu is not a power of 2",
                 capacity_);
         }
 
@@ -126,7 +131,7 @@ public:
             auto const wp = next_version_.load(std::memory_order_relaxed);
             auto const next_wp = wp + 1;
             MONAD_ASSERT(next_wp != 0);
-            auto *p = start_lifetime_as<std::atomic<chunk_offset_t>>(
+            auto *p = monad::start_lifetime_as<std::atomic<chunk_offset_t>>(
                 &root_offsets_chunks_[wp & (capacity_ - 1)]);
             p->store(o, std::memory_order_release);
             next_version_.store(next_wp, std::memory_order_release);
@@ -138,7 +143,7 @@ public:
         void assign(size_t const i, chunk_offset_t const o) noexcept
         {
             MONAD_ASSERT(capacity_ != 0);
-            auto *p = start_lifetime_as<std::atomic<chunk_offset_t>>(
+            auto *p = monad::start_lifetime_as<std::atomic<chunk_offset_t>>(
                 &root_offsets_chunks_[i & (capacity_ - 1)]);
             p->store(o, std::memory_order_release);
             update_version_lower_bound_(
@@ -148,7 +153,7 @@ public:
         chunk_offset_t operator[](size_t const i) const noexcept
         {
             MONAD_ASSERT(capacity_ != 0);
-            return start_lifetime_as<std::atomic<chunk_offset_t> const>(
+            return monad::start_lifetime_as<std::atomic<chunk_offset_t> const>(
                        &root_offsets_chunks_[i & (capacity_ - 1)])
                 ->load(std::memory_order_acquire);
         }
@@ -241,7 +246,7 @@ public:
     // naturally with a promote flip done under release.
     uint8_t primary_ring_idx() const noexcept
     {
-        return start_lifetime_as<std::atomic<uint8_t> const>(
+        return monad::start_lifetime_as<std::atomic<uint8_t> const>(
                    &copies_[0].main->primary_ring_idx)
             ->load(std::memory_order_acquire);
     }
@@ -450,10 +455,10 @@ private:
         }
 
         copies_[0].*span_field = {
-            start_lifetime_as<chunk_offset_t>((chunk_offset_t *)reservation[0]),
+            monad::start_lifetime_as<chunk_offset_t>((chunk_offset_t *)reservation[0]),
             max_chunks * entries_per_chunk};
         copies_[1].*span_field = {
-            start_lifetime_as<chunk_offset_t>((chunk_offset_t *)reservation[1]),
+            monad::start_lifetime_as<chunk_offset_t>((chunk_offset_t *)reservation[1]),
             max_chunks * entries_per_chunk};
     }
 
@@ -483,7 +488,7 @@ private:
                 m->main->root_offsets.version_lower_bound_,
                 m->main->root_offsets.next_version_,
                 m->ring_a_span,
-                start_lifetime_as<std::atomic<uint32_t> const>(
+                monad::start_lifetime_as<std::atomic<uint32_t> const>(
                     &m->main->root_offsets.storage_.cnv_chunks_len)
                         ->load(std::memory_order_acquire) *
                     entries_per_chunk};
@@ -492,7 +497,7 @@ private:
             m->main->secondary_timeline.version_lower_bound_,
             m->main->secondary_timeline.next_version_,
             m->ring_b_span,
-            start_lifetime_as<std::atomic<uint32_t> const>(
+            monad::start_lifetime_as<std::atomic<uint32_t> const>(
                 &m->main->secondary_timeline.storage_.cnv_chunks_len)
                     ->load(std::memory_order_acquire) *
                 entries_per_chunk};

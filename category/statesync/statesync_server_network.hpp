@@ -15,6 +15,7 @@
 
 #pragma once
 
+#include <category/core/assert.h>
 #include <category/core/byte_string.hpp>
 #include <category/core/config.hpp>
 #include <category/core/log.hpp>
@@ -22,12 +23,15 @@
 
 #include <array>
 #include <chrono>
-#include <poll.h>
-#include <sys/eventfd.h>
-#include <sys/socket.h>
-#include <sys/un.h>
 #include <thread>
 #include <utility>
+
+#ifndef _WIN32
+    #include <poll.h>
+    #include <sys/eventfd.h>
+    #include <sys/socket.h>
+    #include <sys/un.h>
+#endif
 
 struct monad_statesync_server_network
 {
@@ -38,6 +42,11 @@ struct monad_statesync_server_network
 
     void connect()
     {
+#ifdef _WIN32
+        MONAD_ABORT_PRINTF(
+            "statesync server networking is not yet implemented on "
+            "Windows");
+#else
         fd = socket(AF_UNIX, SOCK_STREAM, 0);
         MONAD_ASSERT_PRINTF(
             fd >= 0, "failed to create socket: %s", strerror(errno));
@@ -61,37 +70,52 @@ struct monad_statesync_server_network
                 return;
             }
         }
+#endif
     }
 
     void signal_shutdown()
     {
+#ifdef _WIN32
+        MONAD_ABORT_PRINTF(
+            "statesync server networking is not yet implemented on "
+            "Windows");
+#else
         uint64_t const val = 1;
         ssize_t const res = write(shutdown_eventfd, &val, sizeof(val));
         if (res != sizeof(val)) {
             LOG_WARNING(
                 "Failed to signal shutdown eventfd: {}", strerror(errno));
         }
+#endif
     }
 
     monad_statesync_server_network(char const *const path)
         : path{path}
     {
+#ifdef _WIN32
+        MONAD_ABORT_PRINTF(
+            "statesync server networking is not yet implemented on "
+            "Windows");
+#else
         shutdown_eventfd = eventfd(0, EFD_CLOEXEC | EFD_NONBLOCK);
         MONAD_ASSERT_PRINTF(
             shutdown_eventfd >= 0,
             "failed to create eventfd: %s",
             strerror(errno));
         connect();
+#endif
     }
 
     ~monad_statesync_server_network()
     {
+#ifndef _WIN32
         if (shutdown_eventfd >= 0) {
             close(shutdown_eventfd);
         }
         if (fd >= 0) {
             close(fd);
         }
+#endif
     }
 };
 
@@ -101,8 +125,13 @@ namespace
 {
     constexpr size_t SEND_BATCH_SIZE = 64 * 1024;
 
-    void send(int const fd, byte_string_view const buf)
+    void send([[maybe_unused]] int const fd, [[maybe_unused]] byte_string_view const buf)
     {
+#ifdef _WIN32
+        MONAD_ABORT_PRINTF(
+            "statesync server networking is not yet implemented on "
+            "Windows");
+#else
         size_t nsent = 0;
         while (nsent < buf.size()) {
             ssize_t const res =
@@ -123,13 +152,18 @@ namespace
             }
             nsent += static_cast<size_t>(res);
         }
+#endif
     }
 }
 
 inline ssize_t statesync_server_recv(
-    monad_statesync_server_network *const net, unsigned char *const buf,
-    size_t const n)
+    [[maybe_unused]] monad_statesync_server_network *const net,
+    [[maybe_unused]] unsigned char *const buf, [[maybe_unused]] size_t const n)
 {
+#ifdef _WIN32
+    MONAD_ABORT_PRINTF(
+        "statesync server networking is not yet implemented on Windows");
+#else
     size_t total_received = 0;
 
     while (total_received < n) {
@@ -194,6 +228,7 @@ inline ssize_t statesync_server_recv(
     }
 
     return static_cast<ssize_t>(n);
+#endif
 }
 
 inline void statesync_server_send_upsert(

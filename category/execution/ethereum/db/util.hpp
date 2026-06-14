@@ -170,7 +170,7 @@ void write_to_file(
 mpt::Node::SharedPtr load_from_binary(
     mpt::Db &, std::istream &accounts, std::istream &code,
     uint64_t init_block_number = 0,
-    size_t buf_size = 1ul << 32); // TODO: dynamic loading
+    size_t buf_size = 1ull << 32); // TODO: dynamic loading
 
 mpt::Node::SharedPtr
 load_header(mpt::Node::SharedPtr, mpt::Db &, BlockHeader const &);

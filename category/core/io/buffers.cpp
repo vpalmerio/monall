@@ -13,7 +13,9 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-#include <bits/types/struct_iovec.h>
+#ifndef _WIN32
+    #include <bits/types/struct_iovec.h>
+#endif
 #include <category/core/io/buffers.hpp>
 
 #include <category/core/assert.h>
@@ -21,7 +23,9 @@
 #include <category/core/io/config.hpp>
 #include <category/core/io/ring.hpp>
 
-#include <liburing.h>
+#ifndef _WIN32
+    #include <liburing.h>
+#endif
 
 #include <bit>
 #include <cstddef>
@@ -59,6 +63,7 @@ Buffers::Buffers(
               ? 0
               : (write_buf_->get_size() / write_size)}
 {
+#ifndef _WIN32
     auto do_register_buffers = [](io_uring *const ring,
                                   const struct iovec *const iovecs,
                                   unsigned const nr_iovecs,
@@ -96,14 +101,17 @@ Buffers::Buffers(
              .iov_len = write_buf_.value().get_size()}};
         do_register_buffers(&ring_.get_ring(), iov, 2);
     }
+#endif
 }
 
 Buffers::~Buffers()
 {
+#ifndef _WIN32
     if (wr_ring_ != nullptr) {
         MONAD_ASSERT(!io_uring_unregister_buffers(&wr_ring_->get_ring()));
     }
     MONAD_ASSERT(!io_uring_unregister_buffers(&ring_.get_ring()));
+#endif
 }
 
 MONAD_IO_NAMESPACE_END

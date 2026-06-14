@@ -229,7 +229,7 @@ void TrieDb::set_block_and_prefix(
     }
     MONAD_ASSERT_PRINTF(
         db_.find(curr_root_, prefix_, block_number).has_value(),
-        "Fail to find block_number %lu, block_id %s",
+        "Fail to find block_number %llu, block_id %s",
         block_number,
         fmt::format("{}", block_id).c_str());
     proposal_block_id_ = block_id;
@@ -243,7 +243,7 @@ void TrieDb::finalize(uint64_t const block_number, bytes32_t const &block_id)
     MONAD_ASSERT_PRINTF(
         latest_finalized == INVALID_BLOCK_NUM ||
             block_number == latest_finalized + 1,
-        "block_number %lu is not the next finalized block after %lu",
+        "block_number %llu is not the next finalized block after %llu",
         block_number,
         latest_finalized);
     MONAD_ASSERT(block_id != bytes32_t{});
@@ -270,7 +270,7 @@ void TrieDb::update_verified_block(uint64_t const block_number)
     auto const latest_verified = db_.get_latest_verified_version();
     MONAD_ASSERT_PRINTF(
         latest_verified == INVALID_BLOCK_NUM || block_number > latest_verified,
-        "block_number %lu must be greater than last_verified %lu",
+        "block_number %llu must be greater than last_verified %llu",
         block_number,
         latest_verified);
     db_.update_verified_version(block_number);

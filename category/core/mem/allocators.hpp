@@ -24,6 +24,10 @@
 #include <span>
 #include <stdexcept>
 
+#ifdef _WIN32
+    #include <malloc.h> // for _aligned_malloc/_aligned_free
+#endif
+
 MONAD_NAMESPACE_BEGIN
 
 namespace allocators
@@ -90,8 +94,13 @@ namespace allocators
         {
             MONAD_ASSERT(no < size_t(-1) / sizeof(T));
             if constexpr (alignof(T) > alignof(max_align_t)) {
+#ifdef _WIN32
+                return reinterpret_cast<T *>(
+                    _aligned_malloc(no * sizeof(T), alignof(T)));
+#else
                 return reinterpret_cast<T *>(
                     std::aligned_alloc(alignof(T), no * sizeof(T)));
+#endif
             }
             return reinterpret_cast<T *>(std::malloc(no * sizeof(T)));
         }
@@ -101,14 +110,25 @@ namespace allocators
         {
             MONAD_ASSERT(no < size_t(-1) / sizeof(T));
             if constexpr (alignof(U) > alignof(max_align_t)) {
+#ifdef _WIN32
+                return reinterpret_cast<T *>(
+                    _aligned_malloc(no * sizeof(T), alignof(U)));
+#else
                 return reinterpret_cast<T *>(
                     std::aligned_alloc(alignof(U), no * sizeof(T)));
+#endif
             }
             return reinterpret_cast<T *>(std::malloc(no * sizeof(T)));
         }
 
         constexpr void deallocate(T *const p, size_t const)
         {
+#ifdef _WIN32
+            if constexpr (alignof(T) > alignof(max_align_t)) {
+                _aligned_free(p);
+                return;
+            }
+#endif
             std::free(p);
         }
     };

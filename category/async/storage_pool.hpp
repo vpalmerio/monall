@@ -126,7 +126,7 @@ public:
                     sizeof(uint32_t) == sizeof(std::atomic<uint32_t>));
                 auto const count = chunks(end_of_this_offset);
                 return {
-                    start_lifetime_as_array<std::atomic<uint32_t>>(
+                    monad::start_lifetime_as_array<std::atomic<uint32_t>>(
                         const_cast<std::byte *>(
                             reinterpret_cast<std::byte const *>(this)) -
                             count * sizeof(uint32_t),

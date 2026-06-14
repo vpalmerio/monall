@@ -20,11 +20,10 @@
 #include <cstddef>
 
 #ifndef MONAD_USE_STD_START_LIFETIME_AS
-    #if __cpp_lib_start_lifetime_as >= 202207L
-        #define MONAD_USE_STD_START_LIFETIME_AS 1
-    #else
-        #define MONAD_USE_STD_START_LIFETIME_AS 0
-    #endif
+    // GCC's libstdc++ std::start_lifetime_as(_array) rejects std::atomic<T>
+    // via static_assert(is_implicit_lifetime_v<T>), which this codebase
+    // relies on, so always use the reinterpret_cast-based polyfill below.
+    #define MONAD_USE_STD_START_LIFETIME_AS 0
 #endif
 
 #if MONAD_USE_STD_START_LIFETIME_AS

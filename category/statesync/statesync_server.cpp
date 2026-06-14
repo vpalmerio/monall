@@ -29,14 +29,17 @@
 #include <category/statesync/statesync_server_context.hpp>
 
 #include <chrono>
-#include <fcntl.h>
 #include <mutex>
-#include <sys/socket.h>
-#include <sys/stat.h>
-#include <sys/types.h>
-#include <sys/un.h>
 #include <thread>
-#include <unistd.h>
+
+#ifndef _WIN32
+    #include <fcntl.h>
+    #include <sys/socket.h>
+    #include <sys/stat.h>
+    #include <sys/types.h>
+    #include <sys/un.h>
+    #include <unistd.h>
+#endif
 
 struct monad_statesync_server
 {

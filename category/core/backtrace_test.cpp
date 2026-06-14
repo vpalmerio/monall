@@ -17,6 +17,7 @@
 #include <category/core/backtrace.hpp>
 
 #include <category/core/assert.h>
+#include <category/core/compat.h>
 #include <category/core/test_util/gtest_signal_stacktrace_printer.hpp> // NOLINT
 
 #include <array>
@@ -27,7 +28,9 @@
 
 #include <gtest/gtest.h>
 
-#include <bits/time.h>
+#ifndef _WIN32
+    #include <bits/time.h>
+#endif
 #include <time.h>
 #include <unistd.h>
 

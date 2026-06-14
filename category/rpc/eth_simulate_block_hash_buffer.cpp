@@ -47,7 +47,10 @@ bytes32_t const &EthSimulateBlockHashBuffer::get(uint64_t const n) const
 {
     uint64_t const current_n = this->n();
     MONAD_ASSERT_PRINTF(
-        n < current_n && n + N >= current_n, "n_=%lu, n=%lu", current_n, n);
+        n < current_n && n + N >= current_n,
+        "n_=%llu, n=%llu",
+        current_n,
+        n);
 
     // Simulated blocks begin at `n_`. Querying a block number at or
     // above `n_` means we should read from the simulated-hash window.
@@ -55,7 +58,7 @@ bytes32_t const &EthSimulateBlockHashBuffer::get(uint64_t const n) const
         size_t const idx = static_cast<size_t>(n - n_);
         MONAD_ASSERT_PRINTF(
             idx < i_,
-            "missing simulated block hash: n=%lu, idx=%zu, i_=%lu",
+            "missing simulated block hash: n=%llu, idx=%zu, i_=%llu",
             n,
             idx,
             i_);
@@ -77,7 +80,7 @@ bytes32_t const &EthSimulateBlockHashBuffer::get(uint64_t const n) const
 void EthSimulateBlockHashBuffer::advance(bytes32_t const &simulated_block_hash)
 {
     MONAD_ASSERT_PRINTF(
-        i_ < N, "block hash buffer overflow: i_=%lu, N=%u", i_, N);
+        i_ < N, "block hash buffer overflow: i_=%llu, N=%u", i_, N);
     simulated_block_hashes_[i_++] = simulated_block_hash;
 }
 

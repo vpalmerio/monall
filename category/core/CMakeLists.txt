@@ -153,9 +153,15 @@ add_library(
   # io
   "io/buffer_pool.cpp"
   "io/buffer_pool.hpp"
+  "io/buffers.cpp"
+  "io/buffers.hpp"
   "io/config.hpp"
+  "io/ring.hpp"
+  "io/ring.cpp"
   # mem
   "mem/align.h"
+  "mem/huge_mem.hpp"
+  "mem/huge_mem.cpp"
   # rlp
   "rlp/config.hpp"
   "rlp/decode_error.cpp"
@@ -182,14 +188,7 @@ if(${CMAKE_SYSTEM_NAME} MATCHES "Linux")
             "cpuset.h"
             # event
             "event/event_ring_util_linux.c"
-            # io
-            "io/buffers.cpp"
-            "io/buffers.hpp"
-            "io/ring.hpp"
-            "io/ring.cpp"
             # mem
-            "mem/huge_mem.hpp"
-            "mem/huge_mem.cpp"
             "mem/hugetlb_path.c"
             "mem/hugetlb_path.h"
             # procfs

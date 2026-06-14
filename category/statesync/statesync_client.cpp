@@ -180,7 +180,7 @@ bool monad_statesync_client_finalize(monad_statesync_client_context *const ctx)
     if (latest_version != tgrt.number) {
         ctx->db.move_trie_version_forward(latest_version, tgrt.number);
         bytes32_t expected = tgrt.parent_hash;
-        for (size_t i = 0; i < std::min(tgrt.number, 256ul); ++i) {
+        for (size_t i = 0; i < std::min(tgrt.number, UINT64_C(256)); ++i) {
             auto const v = tgrt.number - i - 1;
             auto const &hdr = ctx->hdrs[v % ctx->hdrs.size()];
             auto const rlp = rlp::encode_block_header(hdr);

@@ -50,7 +50,11 @@ struct FinalizedDeletionsEntry
     size_t size{0};
 };
 
+// std::mutex's size (and thus this struct's size) is platform-specific --
+// mingw-w64's implementation is considerably smaller than glibc's.
+#ifndef _WIN32
 static_assert(sizeof(FinalizedDeletionsEntry) == 64);
+#endif
 static_assert(alignof(FinalizedDeletionsEntry) == 8);
 
 class FinalizedDeletions
@@ -71,7 +75,9 @@ public:
     void write(uint64_t block_number, std::vector<Deletion> const &);
 };
 
+#ifndef _WIN32
 static_assert(sizeof(FinalizedDeletions) == 108764832);
+#endif
 static_assert(alignof(FinalizedDeletions) == 8);
 
 struct ProposedDeletions

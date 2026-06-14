@@ -30,7 +30,7 @@ inline unsigned to_node_reference(
     byte_string_view const rlp, unsigned char *const dest) noexcept
 {
     if (MONAD_LIKELY(rlp.size() >= KECCAK256_SIZE)) {
-        keccak256(rlp.data(), rlp.size(), dest);
+        keccak256(rlp.data(), static_cast<unsigned long>(rlp.size()), dest);
         return KECCAK256_SIZE;
     }
     else {

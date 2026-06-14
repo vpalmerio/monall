@@ -13,25 +13,12 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-#include <features.h>
-
 #include <category/core/mem/huge_mem.hpp>
 
 #include <category/core/assert.h>
 #include <category/core/config.hpp>
 
-#include <sys/mman.h>
-
-#if defined(__GNU_LIBRARY__) && __GLIBC__ == 2 && __GLIBC_MINOR__ < 40
-    // Before glibc 2.40, <sys/mman.h> did not have the MAP_HUGE_<SIZE> macros;
-    // this can be removed when we don't need Ubuntu 24.04 LTS anymore (it has
-    // glibc 2.39)
-    #include <linux/mman.h>
-#endif
-
 #include <cstddef>
-
-MONAD_NAMESPACE_BEGIN
 
 namespace
 {
@@ -44,7 +31,56 @@ namespace
         size <<= bits;
         return size;
     }
+
+    // 2MB, matching the rounding granularity of Linux's MAP_HUGE_2MB
+    constexpr unsigned HUGE_PAGE_BITS = 21;
 }
+
+#ifdef _WIN32
+
+    #include <category/core/compat.h>
+
+MONAD_NAMESPACE_BEGIN
+
+// Plain VirtualAlloc/VirtualFree for now; large-page support is a later,
+// performance-only phase.
+HugeMem::HugeMem(size_t const size)
+    : size_{[size] {
+        MONAD_ASSERT(size > 0);
+        return round_up(size, HUGE_PAGE_BITS);
+    }()}
+    , data_{[this] {
+        void *const data =
+            VirtualAlloc(nullptr, size_, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
+        MONAD_ASSERT(data != nullptr);
+        return static_cast<unsigned char *>(data);
+    }()}
+{
+}
+
+HugeMem::~HugeMem()
+{
+    if (size_ > 0) {
+        MONAD_ASSERT(VirtualFree(data_, 0, MEM_RELEASE));
+    }
+}
+
+MONAD_NAMESPACE_END
+
+#else
+
+    #include <features.h>
+
+    #include <sys/mman.h>
+
+    #if defined(__GNU_LIBRARY__) && __GLIBC__ == 2 && __GLIBC_MINOR__ < 40
+        // Before glibc 2.40, <sys/mman.h> did not have the MAP_HUGE_<SIZE>
+        // macros; this can be removed when we don't need Ubuntu 24.04 LTS
+        // anymore (it has glibc 2.39)
+        #include <linux/mman.h>
+    #endif
+
+MONAD_NAMESPACE_BEGIN
 
 HugeMem::HugeMem(size_t const size)
     : size_{[size] {
@@ -80,3 +116,5 @@ HugeMem::~HugeMem()
 }
 
 MONAD_NAMESPACE_END
+
+#endif

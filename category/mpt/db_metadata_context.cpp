@@ -39,10 +39,16 @@
 #include <cstring>
 #include <optional>
 #include <span>
-#include <sys/mman.h>
 #include <thread>
 #include <unistd.h>
 #include <vector>
+
+#ifdef _WIN32
+    #include <category/core/compat.h>
+    #include <malloc.h> // for _aligned_malloc/_aligned_free
+#else
+    #include <sys/mman.h>
+#endif
 
 MONAD_MPT_NAMESPACE_BEGIN
 
@@ -94,7 +100,7 @@ DbMetadataContext::DbMetadataContext(AsyncIO &io)
         "chunk_info[]; pool configuration is incompatible with this build");
 
     // mmap both metadata copies
-    copies_[0].main = start_lifetime_as<detail::db_metadata>(::mmap(
+    copies_[0].main = monad::start_lifetime_as<detail::db_metadata>(::mmap(
         nullptr,
         metadata_mmap_size_,
         prot_,
@@ -102,7 +108,7 @@ DbMetadataContext::DbMetadataContext(AsyncIO &io)
         fd.first,
         off_t(fdr.second)));
     MONAD_ASSERT(copies_[0].main != MAP_FAILED);
-    copies_[1].main = start_lifetime_as<detail::db_metadata>(::mmap(
+    copies_[1].main = monad::start_lifetime_as<detail::db_metadata>(::mmap(
         nullptr,
         metadata_mmap_size_,
         prot_,
@@ -398,10 +404,19 @@ DbMetadataContext::DbMetadataContext(AsyncIO &io)
 
         auto const &first_chunk =
             io_->storage_pool().chunk(storage_pool::cnv, 1);
+#ifdef _WIN32
+        auto *tofill = _aligned_malloc(first_chunk.capacity(), DISK_PAGE_SIZE);
+#else
         auto *tofill = aligned_alloc(DISK_PAGE_SIZE, first_chunk.capacity());
+#endif
         MONAD_ASSERT(tofill != nullptr);
-        auto const untofill =
-            monad::make_scope_exit([&]() noexcept { ::free(tofill); });
+        auto const untofill = monad::make_scope_exit([&]() noexcept {
+#ifdef _WIN32
+            ::_aligned_free(tofill);
+#else
+            ::free(tofill);
+#endif
+        });
         memset(tofill, 0xff, first_chunk.capacity());
 
         for (uint32_t n = 1; n <= ring_total; n++) {
@@ -467,21 +482,21 @@ size_t DbMetadataContext::map_bytes_per_chunk_() const noexcept
 
 uint64_t DbMetadataContext::get_latest_finalized_version() const noexcept
 {
-    return start_lifetime_as<std::atomic_uint64_t const>(
+    return monad::start_lifetime_as<std::atomic_uint64_t const>(
                &copies_[0].main->latest_finalized_version)
         ->load(std::memory_order_acquire);
 }
 
 uint64_t DbMetadataContext::get_latest_verified_version() const noexcept
 {
-    return start_lifetime_as<std::atomic_uint64_t const>(
+    return monad::start_lifetime_as<std::atomic_uint64_t const>(
                &copies_[0].main->latest_verified_version)
         ->load(std::memory_order_acquire);
 }
 
 uint64_t DbMetadataContext::get_latest_voted_version() const noexcept
 {
-    return start_lifetime_as<std::atomic_uint64_t const>(
+    return monad::start_lifetime_as<std::atomic_uint64_t const>(
                &copies_[0].main->latest_voted_version)
         ->load(std::memory_order_acquire);
 }
@@ -493,7 +508,7 @@ bytes32_t DbMetadataContext::get_latest_voted_block_id() const noexcept
 
 uint64_t DbMetadataContext::get_latest_proposed_version() const noexcept
 {
-    return start_lifetime_as<std::atomic_uint64_t const>(
+    return monad::start_lifetime_as<std::atomic_uint64_t const>(
                &copies_[0].main->latest_proposed_version)
         ->load(std::memory_order_acquire);
 }
@@ -514,7 +529,7 @@ int64_t DbMetadataContext::get_auto_expire_version_metadata(
     auto const *const slot =
         (ring_idx == 0) ? &m->root_offsets_state.auto_expire_version_
                         : &m->secondary_timeline_state.auto_expire_version_;
-    return start_lifetime_as<std::atomic_int64_t const>(slot)->load(
+    return monad::start_lifetime_as<std::atomic_int64_t const>(slot)->load(
         std::memory_order_acquire);
 }
 
@@ -580,7 +595,7 @@ void DbMetadataContext::set_auto_expire_version_metadata(
         auto *const slot =
             (ring_idx == 0) ? &m->root_offsets_state.auto_expire_version_
                             : &m->secondary_timeline_state.auto_expire_version_;
-        start_lifetime_as<std::atomic_int64_t>(slot)->store(
+        monad::start_lifetime_as<std::atomic_int64_t>(slot)->store(
             version, std::memory_order_release);
     };
     do_(copies_[0].main);
@@ -691,7 +706,7 @@ uint64_t DbMetadataContext::version_history_max_possible() const noexcept
 
 uint64_t DbMetadataContext::version_history_length() const noexcept
 {
-    return start_lifetime_as<std::atomic_uint64_t const>(
+    return monad::start_lifetime_as<std::atomic_uint64_t const>(
                &copies_[0].main->history_length)
         ->load(std::memory_order_relaxed);
 }
@@ -719,7 +734,7 @@ bool DbMetadataContext::timeline_active(timeline_id const tid) const noexcept
     if (tid == timeline_id::primary) {
         return true;
     }
-    return start_lifetime_as<std::atomic<uint8_t> const>(
+    return monad::start_lifetime_as<std::atomic<uint8_t> const>(
                &copies_[0].main->secondary_timeline_active_)
                ->load(std::memory_order_acquire) != 0;
 }
@@ -936,7 +951,7 @@ void DbMetadataContext::sync_ring_data_to_disk_()
         auto const bytes = uint64_t(chunks_len) * map_bytes_per_chunk_();
         MONAD_ASSERT_PRINTF(
             0 == ::msync(span.data(), bytes, MS_SYNC),
-            "msync of %s on copy %u (%lu bytes) failed: %s (errno=%d)",
+            "msync of %s on copy %u (%zu bytes) failed: %s (errno=%d)",
             ring_name,
             which,
             bytes,
@@ -1066,15 +1081,15 @@ void DbMetadataContext::do_activate_secondary_body_(uint32_t const new_chunks)
         //    capacity excludes older versions (idempotent: std::max is a
         //    fixed point under repeated application).
         uint64_t const nv =
-            start_lifetime_as<std::atomic_uint64_t const>(pver_nv)->load(
+            monad::start_lifetime_as<std::atomic_uint64_t const>(pver_nv)->load(
                 std::memory_order_acquire);
         uint64_t const cur_lb =
-            start_lifetime_as<std::atomic_uint64_t const>(pver_lb)->load(
+            monad::start_lifetime_as<std::atomic_uint64_t const>(pver_lb)->load(
                 std::memory_order_acquire);
         uint64_t const new_lb =
             std::max(cur_lb, (nv >= new_cap) ? (nv - new_cap) : uint64_t{0});
         if (new_lb > cur_lb) {
-            start_lifetime_as<std::atomic_uint64_t>(pver_lb)->store(
+            monad::start_lifetime_as<std::atomic_uint64_t>(pver_lb)->store(
                 new_lb, std::memory_order_release);
         }
         // 2. Under replay, the primary's tail slots [new_chunks, old_chunks)
@@ -1116,9 +1131,9 @@ void DbMetadataContext::do_activate_secondary_body_(uint32_t const new_chunks)
                 if (old_pos == new_pos) {
                     continue;
                 }
-                auto *src = start_lifetime_as<std::atomic<chunk_offset_t>>(
+                auto *src = monad::start_lifetime_as<std::atomic<chunk_offset_t>>(
                     &primary_span[old_pos]);
-                auto *dst = start_lifetime_as<std::atomic<chunk_offset_t>>(
+                auto *dst = monad::start_lifetime_as<std::atomic<chunk_offset_t>>(
                     &primary_span[new_pos]);
                 dst->store(
                     src->load(std::memory_order_acquire),
@@ -1178,17 +1193,17 @@ void DbMetadataContext::do_activate_secondary_body_(uint32_t const new_chunks)
         auto const secondary_live_bytes =
             uint64_t(new_chunks) * map_bytes_per_chunk_();
         memset((void *)secondary_span.data(), 0xff, secondary_live_bytes);
-        start_lifetime_as<std::atomic_uint64_t>(sver_lb)->store(
+        monad::start_lifetime_as<std::atomic_uint64_t>(sver_lb)->store(
             0, std::memory_order_release);
-        start_lifetime_as<std::atomic_uint64_t>(sver_nv)->store(
+        monad::start_lifetime_as<std::atomic_uint64_t>(sver_nv)->store(
             0, std::memory_order_release);
         // 7. Commit cnv_chunks_len (idempotent store of the same value).
-        start_lifetime_as<std::atomic<uint32_t>>(&pstore.cnv_chunks_len)
+        monad::start_lifetime_as<std::atomic<uint32_t>>(&pstore.cnv_chunks_len)
             ->store(new_chunks, std::memory_order_release);
-        start_lifetime_as<std::atomic<uint32_t>>(&sstore.cnv_chunks_len)
+        monad::start_lifetime_as<std::atomic<uint32_t>>(&sstore.cnv_chunks_len)
             ->store(new_chunks, std::memory_order_release);
         // 8. Flip secondary_timeline_active_ (idempotent).
-        start_lifetime_as<std::atomic<uint8_t>>(&m->secondary_timeline_active_)
+        monad::start_lifetime_as<std::atomic<uint8_t>>(&m->secondary_timeline_active_)
             ->store(1, std::memory_order_release);
     }
 
@@ -1349,10 +1364,10 @@ void DbMetadataContext::do_deactivate_secondary_body_(
                 0xff,
                 tail_bytes);
             uint64_t const nv =
-                start_lifetime_as<std::atomic_uint64_t const>(pver_nv)->load(
+                monad::start_lifetime_as<std::atomic_uint64_t const>(pver_nv)->load(
                     std::memory_order_acquire);
             uint64_t const lb =
-                start_lifetime_as<std::atomic_uint64_t const>(pver_lb)->load(
+                monad::start_lifetime_as<std::atomic_uint64_t const>(pver_lb)->load(
                     std::memory_order_acquire);
             if (nv != lb) {
                 for (uint64_t v = lb; v < nv; v++) {
@@ -1361,9 +1376,9 @@ void DbMetadataContext::do_deactivate_secondary_body_(
                     if (old_pos == new_pos) {
                         continue;
                     }
-                    auto *src = start_lifetime_as<std::atomic<chunk_offset_t>>(
+                    auto *src = monad::start_lifetime_as<std::atomic<chunk_offset_t>>(
                         &primary_span[old_pos]);
-                    auto *dst = start_lifetime_as<std::atomic<chunk_offset_t>>(
+                    auto *dst = monad::start_lifetime_as<std::atomic<chunk_offset_t>>(
                         &primary_span[new_pos]);
                     dst->store(
                         src->load(std::memory_order_acquire),
@@ -1373,12 +1388,12 @@ void DbMetadataContext::do_deactivate_secondary_body_(
         }
         // 4. Commit the grow / shrink (primary grows, secondary shrinks
         //    to 0). Idempotent stores.
-        start_lifetime_as<std::atomic<uint32_t>>(&pstore.cnv_chunks_len)
+        monad::start_lifetime_as<std::atomic<uint32_t>>(&pstore.cnv_chunks_len)
             ->store(primary_new_chunks, std::memory_order_release);
-        start_lifetime_as<std::atomic<uint32_t>>(&sstore.cnv_chunks_len)
+        monad::start_lifetime_as<std::atomic<uint32_t>>(&sstore.cnv_chunks_len)
             ->store(0, std::memory_order_release);
         // 5. Mark secondary inactive (idempotent).
-        start_lifetime_as<std::atomic<uint8_t>>(&m->secondary_timeline_active_)
+        monad::start_lifetime_as<std::atomic<uint8_t>>(&m->secondary_timeline_active_)
             ->store(0, std::memory_order_release);
     }
 }
@@ -1437,7 +1452,7 @@ void DbMetadataContext::do_promote_secondary_to_primary_body_(
     for (auto const &copy : copies_) {
         auto *const m = copy.main;
         auto const g = m->hold_dirty();
-        start_lifetime_as<std::atomic<uint8_t>>(&m->primary_ring_idx)
+        monad::start_lifetime_as<std::atomic<uint8_t>>(&m->primary_ring_idx)
             ->store(target_ring_idx, std::memory_order_release);
     }
 }
@@ -1516,7 +1531,7 @@ void DbMetadataContext::init_new_pool(
     memset(
         &copies_[0].main->slow_list, 0xff, sizeof(copies_[0].main->slow_list));
     auto *chunk_info =
-        start_lifetime_as_array<detail::db_metadata::chunk_info_t>(
+        monad::start_lifetime_as_array<detail::db_metadata::chunk_info_t>(
             copies_[0].main->chunk_info, chunk_count);
     for (size_t n = 0; n < chunk_count; n++) {
         auto &ci = chunk_info[n];
@@ -1540,15 +1555,18 @@ void DbMetadataContext::init_new_pool(
 #if MONAD_MPT_INITIALIZE_POOL_WITH_REVERSE_ORDER_CHUNKS
     std::reverse(chunks.begin(), chunks.end());
     LOG_INFO_CFORMAT(
-        "Initialize db pool with %zu chunks in reverse order.", chunk_count);
+        "Initialize db pool with %llu chunks in reverse order.",
+        (unsigned long long)chunk_count);
 #elif MONAD_MPT_INITIALIZE_POOL_WITH_RANDOM_SHUFFLED_CHUNKS
     LOG_INFO_CFORMAT(
-        "Initialize db pool with %zu chunks in random order.", chunk_count);
+        "Initialize db pool with %llu chunks in random order.",
+        (unsigned long long)chunk_count);
     small_prng rand;
     random_shuffle(chunks.begin(), chunks.end(), rand);
 #else
     LOG_INFO_CFORMAT(
-        "Initialize db pool with %zu chunks in increasing order.", chunk_count);
+        "Initialize db pool with %llu chunks in increasing order.",
+        (unsigned long long)chunk_count);
 #endif
     auto append_with_insertion_count_override = [&](chunk_list list,
                                                     uint32_t id) {

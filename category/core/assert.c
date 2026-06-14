@@ -24,6 +24,13 @@
 
 extern char const *__progname; // NOLINT(bugprone-reserved-identifier)
 
+#ifdef _WIN32
+// glibc sets this global to the program's basename before main() runs;
+// mingw has no equivalent, so provide the one definition for the whole
+// link here.
+char const *__progname = "monad";
+#endif
+
 extern void monad_stack_backtrace_capture_and_print(
     char *buffer, size_t size, int fd, unsigned indent,
     bool print_async_unsafe_info);

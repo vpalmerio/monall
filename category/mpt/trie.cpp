@@ -1591,9 +1591,9 @@ retry:
         if (node_writer->sender().written_buffer_bytes() !=
             node_writer->sender().buffer().size()) {
             LOG_INFO_CFORMAT(
-                "async_write_node %zu != %zu",
-                node_writer->sender().written_buffer_bytes(),
-                node_writer->sender().buffer().size());
+                "async_write_node %llu != %llu",
+                (unsigned long long)node_writer->sender().written_buffer_bytes(),
+                (unsigned long long)node_writer->sender().buffer().size());
         }
         MONAD_ASSERT(
             node_writer->sender().written_buffer_bytes() ==

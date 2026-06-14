@@ -36,6 +36,16 @@
 #include <span>
 #include <tuple>
 
+#ifdef _WIN32
+// Placeholder until the full IoRing port lands; nothing on Windows
+// constructs or queues a real SQE, but AsyncIO's layout still references
+// this type.
+struct io_uring_sqe
+{
+    unsigned char _opaque[64];
+};
+#endif
+
 MONAD_ASYNC_NAMESPACE_BEGIN
 
 class read_single_buffer_sender;

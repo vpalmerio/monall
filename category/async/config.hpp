@@ -22,8 +22,12 @@
 #include <cstdint>
 #include <span>
 
-#include <linux/types.h> // for __u64
-#include <sys/uio.h> // for struct iovec
+#ifdef _WIN32
+    #include <category/core/compat.h> // for struct iovec
+#else
+    #include <linux/types.h> // for __u64
+    #include <sys/uio.h> // for struct iovec
+#endif
 
 #define MONAD_ASYNC_NAMESPACE_BEGIN                                            \
     namespace monad                                                            \
@@ -63,7 +67,11 @@
 MONAD_ASYNC_NAMESPACE_BEGIN
 
 //! The same type io_uring uses for offsets into files during i/o
+#ifdef _WIN32
+using file_offset_t = std::uint64_t;
+#else
 using file_offset_t = __u64;
+#endif
 
 //! An identifier of data within a `storage_pool`
 struct chunk_offset_t

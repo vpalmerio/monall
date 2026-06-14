@@ -155,7 +155,7 @@ namespace detail
         struct timeline_state_t
         {
             // Last upsert's auto-expire version threshold for this timeline.
-            // Accessed via start_lifetime_as<std::atomic_int64_t>.
+            // Accessed via monad::start_lifetime_as<std::atomic_int64_t>.
             int64_t auto_expire_version_;
             // Reserved for fields added in subsequent dual-timeline PRs
             // (e.g. per-timeline state_machine_kind). Reserving the bytes
@@ -268,7 +268,7 @@ namespace detail
 #ifndef __clang__
             static_assert(bitfield_layout_check());
 #endif
-            return *start_lifetime_as<std::atomic<uint8_t>>(
+            return *monad::start_lifetime_as<std::atomic<uint8_t>>(
                 (std::byte *)&capacity_in_free_list - 1);
         }
 
@@ -618,7 +618,7 @@ namespace detail
     {
         alignas(db_metadata) std::byte buffer[sizeof(db_metadata)];
         memcpy(buffer, src, sizeof(db_metadata));
-        auto *intr = start_lifetime_as<db_metadata>(buffer);
+        auto *intr = monad::start_lifetime_as<db_metadata>(buffer);
         MONAD_ASSERT(intr->is_dirty().load(std::memory_order_acquire) == false);
         auto const g1 = intr->hold_dirty();
         auto const g2 = dest->hold_dirty();

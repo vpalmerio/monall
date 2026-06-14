@@ -19,11 +19,28 @@
 
 #include <category/core/assert.h>
 
-#include <cstring>
+#ifdef _WIN32
 
-#include <liburing.h>
-#include <liburing/io_uring.h>
-#include <string.h>
+MONAD_IO_NAMESPACE_BEGIN
+
+// Placeholder until the full IoRing port lands; nothing on Windows
+// constructs a Ring for real yet.
+Ring::Ring(RingConfig const &config)
+    : config_{config}
+{
+}
+
+Ring::~Ring() = default;
+
+MONAD_IO_NAMESPACE_END
+
+#else
+
+    #include <cstring>
+
+    #include <liburing.h>
+    #include <liburing/io_uring.h>
+    #include <string.h>
 
 MONAD_IO_NAMESPACE_BEGIN
 
@@ -55,3 +72,5 @@ Ring::~Ring()
 }
 
 MONAD_IO_NAMESPACE_END
+
+#endif

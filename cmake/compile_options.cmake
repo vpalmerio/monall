@@ -22,6 +22,19 @@ function(monad_compile_options target)
   target_compile_options(${target} PRIVATE -Wall -Wextra -Wconversion -Werror)
   target_compile_definitions(${target} PUBLIC "_GNU_SOURCE")
 
+  if(WIN32)
+    # mingw-w64's off_t is 32-bit unless _FILE_OFFSET_BITS=64 is requested;
+    # this codebase relies on off_t being able to hold 64-bit file offsets
+    target_compile_definitions(${target} PUBLIC "_FILE_OFFSET_BITS=64")
+
+    # Without WIN32_LEAN_AND_MEAN, <windows.h> (pulled in transitively by
+    # boost::fiber's futex implementation) drags in <ole2.h>, which #defines
+    # `interface` to `struct` -- this collides with evmc.hpp's use of
+    # `interface` as an identifier. NOMINMAX avoids a similar collision
+    # between windows.h's min/max macros and std::min/std::max.
+    target_compile_definitions(${target} PUBLIC "WIN32_LEAN_AND_MEAN" "NOMINMAX")
+  endif()
+
   target_compile_options(
     ${target} PRIVATE $<$<CXX_COMPILER_ID:GNU>:-Wno-missing-field-initializers>)
 

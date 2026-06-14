@@ -17,7 +17,9 @@
 
 #include <category/core/io/config.hpp>
 
-#include <liburing.h>
+#ifndef _WIN32
+    #include <liburing.h>
+#endif
 
 #include <optional>
 
@@ -46,8 +48,14 @@ struct RingConfig
 
 class Ring final
 {
+#ifdef _WIN32
+    // Placeholder layout until the full IoRing port lands; nothing on
+    // Windows constructs a Ring for real yet.
+    RingConfig const config_;
+#else
     io_uring ring_;
     io_uring_params const params_;
+#endif
 
 public:
     explicit Ring(RingConfig const &config = {});
@@ -58,6 +66,7 @@ public:
     Ring &operator=(Ring const &) = delete;
     Ring &operator=(Ring &&) = delete;
 
+#ifndef _WIN32
     [[gnu::always_inline]] io_uring const &get_ring() const
     {
         return ring_;
@@ -72,24 +81,39 @@ public:
     {
         return params_;
     }
+#endif
 
     [[gnu::always_inline]] unsigned get_sq_entries() const
     {
+#ifdef _WIN32
+        return config_.entries;
+#else
         return params_.sq_entries;
+#endif
     }
 
     [[gnu::always_inline]] unsigned get_cq_entries() const
     {
+#ifdef _WIN32
+        return config_.entries;
+#else
         return params_.cq_entries;
+#endif
     }
 
     [[gnu::always_inline]] bool must_call_uring_submit() const
     {
+#ifdef _WIN32
+        return true;
+#else
         return !(params_.flags & IORING_SETUP_SQPOLL);
+#endif
     }
 };
 
+#ifndef _WIN32
 static_assert(sizeof(Ring) == 336);
 static_assert(alignof(Ring) == 8);
+#endif
 
 MONAD_IO_NAMESPACE_END

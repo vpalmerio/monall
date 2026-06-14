@@ -18,6 +18,10 @@
 #include <category/core/likely.h>
 #include <stdio.h>
 
+#ifdef _WIN32
+    #include <category/core/compat.h> // for stpcpy
+#endif
+
 #ifdef __cplusplus
 extern "C"
 {

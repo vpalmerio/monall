@@ -57,7 +57,7 @@ public:
             MONAD_ASSERT_PRINTF(
                 res.assume_error() ==
                     ::monad::mpt::DbError::version_no_longer_exist,
-                "Cannot find block_id %s prefix at block %lu where block is "
+                "Cannot find block_id %s prefix at block %llu where block is "
                 "still valid in db",
                 to_hex(to_byte_string_view(block_id.bytes)).c_str(),
                 block_number);

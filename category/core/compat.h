@@ -46,6 +46,11 @@
         #define AT_FDCWD (-100)
     #endif
 
+    // fcntl.h: close-on-exec equivalent
+    #ifndef O_CLOEXEC
+        #define O_CLOEXEC O_NOINHERIT
+    #endif
+
     // sys/mman.h
     #define PROT_NONE  0x0
     #define PROT_READ  0x1
@@ -63,16 +68,41 @@
 
     #define MAP_FAILED ((void *)-1)
 
+    #define MS_SYNC 4
+
+    // sys/mman.h: madvise() advice values
+    #define MADV_NORMAL     0
+    #define MADV_RANDOM     1
+    #define MADV_SEQUENTIAL 2
+    #define MADV_WILLNEED   3
+    #define MADV_DONTNEED   4
+
     // sys/file.h
     #define LOCK_SH 1
     #define LOCK_EX 2
     #define LOCK_NB 4
     #define LOCK_UN 8
 
+    // sys/uio.h
+    struct iovec
+    {
+        void *iov_base;
+        size_t iov_len;
+    };
+
     #ifdef __cplusplus
 extern "C"
     {
     #endif
+
+// Copies src (including the terminating '\0') to dst and returns a pointer
+// to the terminating '\0' written to dst, like glibc's stpcpy()
+static inline char *stpcpy(char *const dst, char const *const src)
+{
+    size_t const len = strlen(src);
+    memcpy(dst, src, len + 1);
+    return dst + len;
+}
 
 static inline size_t
 strlcpy(char *const dst, char const *const src, size_t const dstsize)
@@ -198,6 +228,25 @@ static inline int munmap(void *const addr, size_t const length)
     return 0;
 }
 
+// Open a memory buffer as a FILE stream, like glibc's fmemopen(); mingw has
+// no equivalent, so this copies the buffer into an anonymous temporary file
+// and returns a stream positioned at its start
+static inline FILE *
+fmemopen(void const *const buf, size_t const size, char const *const mode)
+{
+    (void)mode;
+    FILE *const f = tmpfile();
+    if (f == nullptr) {
+        return nullptr;
+    }
+    if (size != 0 && fwrite(buf, 1, size, f) != size) {
+        fclose(f);
+        return nullptr;
+    }
+    rewind(f);
+    return f;
+}
+
 // Create an unnamed, auto-deleting temporary file and return a CRT file
 // descriptor for it; used as the destination for zstd-decompressed event
 // ring snapshot data
@@ -260,6 +309,94 @@ posix_fallocate(int const fd, off_t const offset, off_t const len)
     }
     (void)SetFilePointerEx(h, cur, nullptr, FILE_BEGIN);
     return 0;
+}
+
+// Positioned read/write that do not disturb the file descriptor's current
+// position, like POSIX pread(2)/pwrite(2); implemented via ReadFile()/
+// WriteFile() with an OVERLAPPED offset, which Win32 honours for synchronous
+// handles too
+static inline ssize_t
+pread(int const fd, void *const buf, size_t const count, off_t const offset)
+{
+    HANDLE const h = (HANDLE)_get_osfhandle(fd);
+    if (h == INVALID_HANDLE_VALUE) {
+        errno = EBADF;
+        return -1;
+    }
+    OVERLAPPED ov = {};
+    ov.Offset = (DWORD)((uint64_t)offset & 0xffffffffu);
+    ov.OffsetHigh = (DWORD)((uint64_t)offset >> 32);
+    DWORD bytes_read = 0;
+    if (!ReadFile(h, buf, (DWORD)count, &bytes_read, &ov)) {
+        if (GetLastError() == ERROR_HANDLE_EOF) {
+            return 0;
+        }
+        errno = EIO;
+        return -1;
+    }
+    return (ssize_t)bytes_read;
+}
+
+static inline ssize_t pwrite(
+    int const fd, void const *const buf, size_t const count,
+    off_t const offset)
+{
+    HANDLE const h = (HANDLE)_get_osfhandle(fd);
+    if (h == INVALID_HANDLE_VALUE) {
+        errno = EBADF;
+        return -1;
+    }
+    OVERLAPPED ov = {};
+    ov.Offset = (DWORD)((uint64_t)offset & 0xffffffffu);
+    ov.OffsetHigh = (DWORD)((uint64_t)offset >> 32);
+    DWORD bytes_written = 0;
+    if (!WriteFile(h, buf, (DWORD)count, &bytes_written, &ov)) {
+        errno = EIO;
+        return -1;
+    }
+    return (ssize_t)bytes_written;
+}
+
+static inline int fsync(int const fd)
+{
+    HANDLE const h = (HANDLE)_get_osfhandle(fd);
+    if (h == INVALID_HANDLE_VALUE) {
+        errno = EBADF;
+        return -1;
+    }
+    if (!FlushFileBuffers(h)) {
+        errno = EIO;
+        return -1;
+    }
+    return 0;
+}
+
+static inline int msync(void *const addr, size_t const length, int const flags)
+{
+    (void)flags;
+    if (!FlushViewOfFile(addr, length)) {
+        errno = EIO;
+        return -1;
+    }
+    return 0;
+}
+
+// Win32 has no equivalent of madvise(); access pattern hints are purely
+// advisory, so this is a no-op that always reports success
+static inline int
+madvise(void *const addr, size_t const length, int const advice)
+{
+    (void)addr;
+    (void)length;
+    (void)advice;
+    return 0;
+}
+
+// pipe(2): mingw only provides _pipe(), which takes an explicit buffer size
+// and text/binary mode flag
+static inline int pipe(int pfds[2])
+{
+    return _pipe(pfds, 4096, _O_BINARY);
 }
 
     #ifdef __cplusplus

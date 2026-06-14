@@ -26,10 +26,13 @@
 #include <map>
 #include <span>
 
-#include <unistd.h>
+#ifndef _WIN32
+    #include <unistd.h>
+#endif
 
 namespace monad::test
 {
+#ifndef _WIN32
     struct SignalStackTracePrinterEnvironment final
         : public ::testing::Environment
     {
@@ -145,4 +148,5 @@ namespace monad::test
     static auto const *RegisterSignalStackTracePrinterEnvironment =
         ::testing::AddGlobalTestEnvironment(
             new SignalStackTracePrinterEnvironment);
+#endif
 }

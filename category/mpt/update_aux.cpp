@@ -43,13 +43,16 @@
 #include <format>
 #include <functional>
 #include <iterator>
-#include <linux/fs.h>
 #include <memory>
 #include <optional>
 #include <ranges>
 #include <string>
-#include <sys/ioctl.h>
 #include <utility>
+
+#ifndef _WIN32
+    #include <linux/fs.h>
+    #include <sys/ioctl.h>
+#endif
 
 MONAD_MPT_NAMESPACE_BEGIN
 
@@ -329,9 +332,13 @@ void UpdateAux::init(AsyncIO &io_, std::optional<uint64_t> const history_len)
         unsigned int logical_block_size = 0;
         unsigned int physical_block_size = 0;
         unsigned int minimum_io_size = 0;
+#ifndef _WIN32
         (void)ioctl(fdr.first, BLKSSZGET, &logical_block_size);
         (void)ioctl(fdr.first, BLKPBSZGET, &physical_block_size);
         (void)ioctl(fdr.first, BLKIOMIN, &minimum_io_size);
+#else
+        (void)fdr;
+#endif
         MONAD_ASSERT_PRINTF(
             logical_block_size == 0 || logical_block_size == 512,
             "MPT requires storage to be addressable in 512 byte granularity. "
@@ -503,8 +510,8 @@ Node::SharedPtr UpdateAux::do_update(
     [[maybe_unused]] auto const curr_slow_writer_offset =
         physical_to_virtual(node_writer_slow->sender().offset());
     LOG_INFO_CFORMAT(
-        "Finish upserting version %lu. Min valid version %lu. Time elapsed: "
-        "%ld us. Disk usage: %.4f. Chunks: %u fast, %u slow, %u free. Writer "
+        "Finish upserting version %llu. Min valid version %llu. Time elapsed: "
+        "%lld us. Disk usage: %.4f. Chunks: %u fast, %u slow, %u free. Writer "
         "offsets: fast={%u,%u}, slow={%u,%u}. Compaction head offset fast=%u, "
         "slow=%u",
         version,
@@ -542,7 +549,7 @@ void UpdateAux::release_unreferenced_chunks()
     chunks_to_remove_before_count_fast_ = min_offsets.fast.get_count();
     chunks_to_remove_before_count_slow_ = min_offsets.slow.get_count();
     LOG_INFO_CFORMAT(
-        "Min valid version %lu compaction offset fast=%u, slow=%u. Remove "
+        "Min valid version %llu compaction offset fast=%u, slow=%u. Remove "
         "chunks before count fast=%u, slow=%u",
         min_valid_version,
         (uint32_t)min_offsets.fast,
@@ -554,7 +561,7 @@ void UpdateAux::release_unreferenced_chunks()
 
 void UpdateAux::erase_versions_up_to_and_including(uint64_t const version)
 {
-    LOG_INFO_CFORMAT("Erase versions up to and including %lu", version);
+    LOG_INFO_CFORMAT("Erase versions up to and including %llu", version);
     clear_root_offsets_up_to_and_including(version);
     release_unreferenced_chunks();
 }
@@ -639,8 +646,8 @@ void UpdateAux::adjust_history_length_based_on_disk_usage()
             disk_usage() <= upper_bound ||
             metadata_ctx_->version_history_length() == MIN_HISTORY_LENGTH);
         LOG_INFO_CFORMAT(
-            "Adjust db history length down from %lu to %lu. Current disk "
-            "usage: %.4f, Time elapsed: %ld us",
+            "Adjust db history length down from %llu to %llu. Current disk "
+            "usage: %.4f, Time elapsed: %lld us",
             history_length_before,
             metadata_ctx_->version_history_length(),
             disk_usage(),
@@ -652,7 +659,7 @@ void UpdateAux::adjust_history_length_based_on_disk_usage()
              metadata_ctx_->version_history_length() < offsets.capacity()) {
         metadata_ctx_->update_history_length_metadata(offsets.capacity());
         LOG_INFO_CFORMAT(
-            "Adjust db history length up from %lu to %lu. Time elapsed: %ld us",
+            "Adjust db history length up from %llu to %llu. Time elapsed: %lld us",
             history_length_before,
             metadata_ctx_->version_history_length(),
             timer.elapsed().count());
@@ -886,7 +893,7 @@ void UpdateAux::free_compacted_chunks()
                     idx); // append not prepend
                 // NOLINTNEXTLINE(bugprone-lambda-function-name)
                 LOG_INFO_CFORMAT(
-                    "Free compacted chunk id %u, time elapsed: %ld us",
+                    "Free compacted chunk id %u, time elapsed: %lld us",
                     idx,
                     timer.elapsed().count());
             }

@@ -63,8 +63,13 @@
 #include <vector>
 
 #include <fcntl.h>
-#include <linux/fs.h>
 #include <unistd.h>
+
+#ifdef _WIN32
+    #include <category/core/compat.h>
+#else
+    #include <linux/fs.h>
+#endif
 
 #undef BLOCK_SIZE // without this concurrentqueue.h gets sad
 #include <concurrentqueue.h>
@@ -131,7 +136,9 @@ AsyncIOContext::AsyncIOContext(OnDiskDbConfig const &options)
         for (auto const &dbname_path : options.dbname_paths) {
             if (!std::filesystem::exists(dbname_path)) {
                 int const fd = ::open(
-                    dbname_path.c_str(), O_CREAT | O_RDWR | O_CLOEXEC, 0600);
+                    dbname_path.string().c_str(),
+                    O_CREAT | O_RDWR | O_CLOEXEC,
+                    0600);
                 MONAD_ASSERT_PRINTF(
                     fd != -1, "open failed due to %s", strerror(errno));
                 auto const unfd =
@@ -728,8 +735,8 @@ public:
         if (unflushed_version_ != INVALID_BLOCK_NUM &&
             unflushed_version_ != version) {
             LOG_WARNING_CFORMAT(
-                "Update version %lu while db hasn't flushed the last update on "
-                "version %lu, the unflushed progress will be lost after this "
+                "Update version %llu while db hasn't flushed the last update on "
+                "version %llu, the unflushed progress will be lost after this "
                 "point",
                 version,
                 unflushed_version_);
@@ -815,8 +822,8 @@ public:
         if (unflushed_version_ != INVALID_BLOCK_NUM &&
             unflushed_version_ != dest_version) {
             LOG_WARNING_CFORMAT(
-                "Update version %lu while db hasn't flushed the last update on "
-                "version %lu, the unflushed progress will be lost after this "
+                "Update version %llu while db hasn't flushed the last update on "
+                "version %llu, the unflushed progress will be lost after this "
                 "point",
                 dest_version,
                 unflushed_version_);

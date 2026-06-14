@@ -55,6 +55,10 @@
 #include <optional>
 #include <vector>
 
+#ifdef _WIN32
+    #include <malloc.h> // for _aligned_malloc/_aligned_free
+#endif
+
 MONAD_MPT_NAMESPACE_BEGIN
 
 class Node;
@@ -125,8 +129,13 @@ public:
         : MONAD_ASYNC_NAMESPACE::read_multiple_buffer_sender(
               receiver.rd_offset, {&buffer_, 1})
         , buffer_(
+#ifdef _WIN32
+              (std::byte *)_aligned_malloc(
+                  receiver.bytes_to_read, DISK_PAGE_SIZE),
+#else
               (std::byte *)aligned_alloc(
                   DISK_PAGE_SIZE, receiver.bytes_to_read),
+#endif
               receiver.bytes_to_read)
     {
         MONAD_ASSERT(
@@ -159,7 +168,11 @@ public:
     ~read_long_update_sender()
     {
         if (buffer_.data() != nullptr) {
+#ifdef _WIN32
+            ::_aligned_free(buffer_.data());
+#else
             ::free(buffer_.data());
+#endif
             buffer_ = {};
         }
     }
