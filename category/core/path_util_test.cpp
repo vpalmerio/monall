@@ -13,14 +13,18 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-#include <print>
+#include <cstdio>
 
 #include <gtest/gtest.h>
 
 #include <errno.h>
 #include <fcntl.h>
-#include <linux/limits.h>
+#include <limits.h>
 #include <unistd.h>
+
+#ifdef _WIN32
+    #include <category/core/compat.h> // for AT_FDCWD
+#endif
 
 #include <category/core/path_util.h>
 
@@ -47,7 +51,7 @@ TEST(PathUtil, Basic)
         AT_FDCWD, TEST_DIR, S_IRWXU, &dirfd, pathbuf, sizeof pathbuf);
     ASSERT_EQ(rc, 0);
     ASSERT_NE(dirfd, -1);
-    std::println(stderr, "full path is: {}", pathbuf);
+    std::fprintf(stderr, "full path is: %s\n", pathbuf);
     (void)close(dirfd);
 
     // Try again; we can't create it, but that's OK: it's there now

@@ -16,12 +16,11 @@
 #pragma once
 
 #include <category/core/config.hpp>
+#include <category/core/tl_tid.h>
 
 #include <cstddef>
 #include <cstdint>
 #include <iterator>
-
-#include <unistd.h> // for gettid()
 
 MONAD_NAMESPACE_BEGIN
 
@@ -86,7 +85,7 @@ public:
 //! \brief A thread safe small prng seeded with the thread id
 inline small_prng &thread_local_prng()
 {
-    static thread_local small_prng v(static_cast<uint32_t>(gettid()));
+    static thread_local small_prng v(static_cast<uint32_t>(get_tl_tid()));
     return v;
 }
 

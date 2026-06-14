@@ -33,8 +33,13 @@
 
 #include <fcntl.h>
 #include <string.h>
-#include <sys/mman.h>
 #include <unistd.h>
+
+#ifdef _WIN32
+    #include <category/core/compat.h> // for PROT_*/MAP_* shims
+#else
+    #include <sys/mman.h>
+#endif
 
 MONAD_NAMESPACE_BEGIN
 

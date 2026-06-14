@@ -85,7 +85,7 @@ target_link_libraries(monad_event PRIVATE ${libzstd_file})
 option(MONAD_EVENT_BUILD_EXAMPLE
     "Build the example program that shows how to use the API" ON)
 
-if (MONAD_EVENT_BUILD_EXAMPLE)
+if (MONAD_EVENT_BUILD_EXAMPLE AND NOT WIN32)
   add_executable(eventwatch "example/eventwatch.c")
   target_compile_options(eventwatch PRIVATE -Wall -Wextra -Wconversion -Werror)
   target_link_libraries(eventwatch PRIVATE monad_event)

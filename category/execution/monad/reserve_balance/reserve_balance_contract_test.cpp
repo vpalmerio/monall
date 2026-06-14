@@ -70,7 +70,16 @@
 
 using namespace monad;
 using namespace monad::vm;
+
+namespace
+{
+// Wrapped in an anonymous namespace so that EvmOpCode::BYTE doesn't conflict
+// with the ::BYTE typedef from <windef.h> (pulled in transitively on
+// Windows) -- a using-enum at file scope would redeclare BYTE in the same
+// scope as that typedef, but an anonymous namespace's implicit using-
+// directive does not.
 using enum monad::vm::compiler::EvmOpCode;
+} // namespace
 
 enum Outcome
 {

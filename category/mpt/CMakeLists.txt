@@ -76,13 +76,19 @@ target_link_libraries(monad_trie PRIVATE Boost::boost)
 target_link_libraries(monad_trie PUBLIC concurrentqueue)
 target_link_libraries(monad_trie PUBLIC monad_async)
 target_link_libraries(monad_trie PUBLIC quill::quill) # TODO: remove
-add_executable(monad-mpt "cli_tool_main.cpp" "cli_tool_impl.cpp")
-monad_compile_options(monad-mpt)
-target_link_libraries(monad-mpt PUBLIC monad_execution PkgConfig::zstd
-                                       PkgConfig::archive CLI11::CLI11)
+if(NOT WIN32)
+  # cli_tool_impl.cpp is a developer tool for managing on-disk storage
+  # pools/chunks directly; it relies on pthread/sched/statfs/sys/mman and
+  # the AsyncIO/storage_pool internals that are stubbed on Windows (Phase
+  # 5/6), so it is not built on Windows.
+  add_executable(monad-mpt "cli_tool_main.cpp" "cli_tool_impl.cpp")
+  monad_compile_options(monad-mpt)
+  target_link_libraries(monad-mpt PUBLIC monad_execution PkgConfig::zstd
+                                         PkgConfig::archive CLI11::CLI11)
 
-target_compile_definitions(monad-mpt
-                           PRIVATE GIT_COMMIT_HASH="${GIT_COMMIT_HASH}")
+  target_compile_definitions(monad-mpt
+                             PRIVATE GIT_COMMIT_HASH="${GIT_COMMIT_HASH}")
+endif()
 
 function(add_trie_test)
   set(ONE_VALUE_ARGS TARGET TEST_FILTER)
@@ -95,6 +101,16 @@ function(add_trie_test)
     "${PROJECT_SOURCE_DIR}/../../test/unit/common/src/test/main.cpp"
     ${ADD_TRIE_TEST_SOURCES})
   monad_compile_options(${ADD_TRIE_TEST_TARGET})
+  if(WIN32)
+    # gtest's GetTypeName() demangles typeid names via __cxa_demangle();
+    # mingw's libstdc++ demangler crashes with heap corruption on the very
+    # long mangled names produced by typed tests parameterized on
+    # structural (class-type) non-type template arguments. Disabling the
+    # cxxabi demangling path falls back to raw (mangled) type names in test
+    # output, which is cosmetic only.
+    target_compile_definitions(${ADD_TRIE_TEST_TARGET} PRIVATE
+                               GTEST_HAS_CXXABI_H_=0)
+  endif()
   target_link_libraries(
     ${ADD_TRIE_TEST_TARGET}
     PUBLIC monad_execution GTest::GTest monad_unit_test_common

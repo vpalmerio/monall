@@ -259,16 +259,33 @@ target_link_libraries(monad_core_disas PUBLIC monad_core)
 # tests
 # ##############################################################################
 
-monad_add_test_folder("${CMAKE_CURRENT_SOURCE_DIR}"
-  EXCLUDE "${CMAKE_CURRENT_SOURCE_DIR}/log_ffi_test.cpp"
-          "${CMAKE_CURRENT_SOURCE_DIR}/event/event_recorder_test.cpp"
-          "${CMAKE_CURRENT_SOURCE_DIR}/fiber/priority_pool_test.cpp")
+set(CORE_TEST_EXCLUDES
+    "${CMAKE_CURRENT_SOURCE_DIR}/log_ffi_test.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/event/event_recorder_test.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/fiber/priority_pool_test.cpp")
+
+if(NOT ${CMAKE_SYSTEM_NAME} MATCHES "Linux")
+  # cpuset.c/cpuset.h are Linux-only (see above); cpuset_test.cpp uses
+  # cpu_set_t/CPU_*/monad_parse_cpuset from <sched.h>, which mingw lacks.
+  list(APPEND CORE_TEST_EXCLUDES "${CMAKE_CURRENT_SOURCE_DIR}/cpuset_test.cpp")
+  # mem/hugetlb_path.c/.h are Linux-only (see above); hugetlbfs_path_test.cpp
+  # exercises monad_hugetlbfs_*/monad_get_default_hugepage_size, which have no
+  # implementation on Windows.
+  list(APPEND CORE_TEST_EXCLUDES
+       "${CMAKE_CURRENT_SOURCE_DIR}/mem/hugetlbfs_path_test.cpp")
+endif()
+
+monad_add_test_folder("${CMAKE_CURRENT_SOURCE_DIR}" EXCLUDE ${CORE_TEST_EXCLUDES})
 
 # log_ffi_test needs default gtest main — incompatible with monad test
 # environment which pre-initializes logging
 monad_add_test(log_ffi_test NO_CUSTOM_MAIN log_ffi_test.cpp)
-monad_add_test(event_recorder_test event/event_recorder_test.cpp
-  PROPERTIES RUN_SERIAL TRUE)
+if(${CMAKE_SYSTEM_NAME} MATCHES "Linux")
+  # event_recorder_test.cpp uses pthread.h/sched.h/linux/limits.h/sys/mman.h
+  # and is Linux-only.
+  monad_add_test(event_recorder_test event/event_recorder_test.cpp
+    PROPERTIES RUN_SERIAL TRUE)
+endif()
 monad_add_test(priority_pool_test fiber/priority_pool_test.cpp
   PROPERTIES RUN_SERIAL TRUE)
 target_compile_definitions(event_reader_extra_test PRIVATE "TEST_DATA_DIR=\"${TEST_DATA_DIR}\"")

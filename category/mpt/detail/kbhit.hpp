@@ -20,9 +20,39 @@
 #include <cstring>
 #include <iostream>
 
-#include <sys/ioctl.h>
-#include <termios.h>
-#include <unistd.h>
+#ifdef _WIN32
+    #include <conio.h>
+#else
+    #include <sys/ioctl.h>
+    #include <termios.h>
+    #include <unistd.h>
+#endif
+
+#ifdef _WIN32
+
+inline bool kbhit()
+{
+    return _kbhit() != 0;
+}
+
+inline int getch()
+{
+    return _getch();
+}
+
+inline char tty_ask_question(char const *const msg, ...)
+{
+    va_list vl;
+    std::cout << std::flush;
+    va_start(vl, msg);
+    vprintf(msg, vl);
+    va_end(vl);
+    fflush(stdout);
+
+    return static_cast<char>(_getch());
+}
+
+#else
 
 inline bool kbhit()
 {
@@ -92,3 +122,5 @@ inline char tty_ask_question(char const *const msg, ...)
 
     return buffer[0];
 }
+
+#endif

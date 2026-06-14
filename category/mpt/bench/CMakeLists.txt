@@ -19,8 +19,13 @@ monad_compile_options(calc_min_version_bench)
 target_link_libraries(calc_min_version_bench PUBLIC monad_trie monad_async monad_core)
 
 # benchmark async reads
-add_executable(async_read_bench "async_read_bench.cpp")
-monad_compile_options(async_read_bench)
-target_link_libraries(
-  async_read_bench PUBLIC monad_trie monad_async monad_core
-                                  CLI11::CLI11 quill::quill)
+if(NOT WIN32)
+  # Uses POSIX alarm()/sigaction(SIGALRM) for its run-time watchdog, which
+  # has no equivalent here yet; the async I/O it benchmarks is also not yet
+  # implemented on Windows.
+  add_executable(async_read_bench "async_read_bench.cpp")
+  monad_compile_options(async_read_bench)
+  target_link_libraries(
+    async_read_bench PUBLIC monad_trie monad_async monad_core
+                                    CLI11::CLI11 quill::quill)
+endif()

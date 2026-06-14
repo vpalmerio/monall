@@ -44,7 +44,16 @@ target_include_directories(monad_statesync PUBLIC ${CATEGORY_MAIN_DIR})
 monad_compile_options(monad_statesync)
 target_link_libraries(monad_statesync PUBLIC monad_execution_ethereum)
 
-monad_add_test_folder(".")
+set(STATESYNC_TEST_EXCLUDES "")
+if(NOT ${CMAKE_SYSTEM_NAME} MATCHES "Linux")
+  # test_network_shutdown.cpp exercises the AF_UNIX/eventfd/poll-based
+  # statesync server networking, which is not yet implemented on Windows
+  # (see statesync_server_network.hpp).
+  list(APPEND STATESYNC_TEST_EXCLUDES
+       "${CMAKE_CURRENT_SOURCE_DIR}/test/test_network_shutdown.cpp")
+endif()
+
+monad_add_test_folder("${CMAKE_CURRENT_SOURCE_DIR}" EXCLUDE ${STATESYNC_TEST_EXCLUDES})
 
 if(CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
   add_executable(fuzz_statesync "${PROJECT_SOURCE_DIR}/test/fuzz_statesync.cpp")

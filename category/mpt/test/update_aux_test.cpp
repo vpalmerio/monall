@@ -207,10 +207,19 @@ TEST(update_aux_test, root_offsets_fast_slow)
     }
 
     { // Fail to reopen upon calling rewind_to_match_offsets()
+#ifdef _WIN32
+        // testing::KilledBySignal is unavailable on Windows (gtest gates it
+        // on !GTEST_OS_WINDOWS); abort() exits the process with code 3 there.
+        EXPECT_EXIT(
+            ({ monad::mpt::UpdateAux{testio, AUX_TEST_HISTORY_LENGTH}; }),
+            ::testing::ExitedWithCode(3),
+            "Detected corruption");
+#else
         EXPECT_EXIT(
             ({ monad::mpt::UpdateAux{testio, AUX_TEST_HISTORY_LENGTH}; }),
             ::testing::KilledBySignal(SIGABRT),
             "Detected corruption");
+#endif
     }
 }
 

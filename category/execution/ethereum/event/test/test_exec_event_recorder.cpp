@@ -33,7 +33,12 @@
 #include <vector>
 
 #include <string.h>
-#include <sys/mman.h>
+
+#ifdef _WIN32
+    #include <category/core/compat.h> // for PROT_*/MAP_* shims
+#else
+    #include <sys/mman.h>
+#endif
 
 using namespace monad;
 
@@ -159,7 +164,7 @@ TEST(ExecEventRecorder, Overflow)
     std::call_once(recorder_initialized, ensure_recorder_initialized);
     ExecutionEventRecorder *const exec_recorder = g_exec_event_recorder.get();
 
-    constexpr size_t OverflowSize = 1UL << 32;
+    constexpr size_t OverflowSize = 1ULL << 32;
     ReservedExecEvent const log_event =
         exec_recorder->reserve_txn_event<monad_exec_txn_log>(
             MONAD_EXEC_TXN_LOG,

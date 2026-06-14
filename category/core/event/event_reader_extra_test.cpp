@@ -31,8 +31,13 @@
 
 #include <errno.h>
 #include <fcntl.h>
-#include <sys/mman.h>
 #include <unistd.h>
+
+#ifdef _WIN32
+    #include <category/core/compat.h> // for PROT_*/MAP_* shims
+#else
+    #include <sys/mman.h>
+#endif
 
 #include <gtest/gtest.h>
 
@@ -43,11 +48,13 @@ TEST(EventSnapshotTest, IsSnapshot)
     bool is_snapshot;
     fs::path const snapshot_file =
         fs::path{TEST_DATA_DIR} / "data" / "event" / "emn-1b-15m.snapshot";
-    int fd = open(snapshot_file.c_str(), O_RDONLY);
+    std::string const snapshot_file_str = snapshot_file.string();
+    int fd = open(snapshot_file_str.c_str(), O_RDONLY);
     ASSERT_NE(fd, -1);
     ASSERT_EQ(
         0,
-        monad_event_is_snapshot_file(fd, snapshot_file.c_str(), &is_snapshot));
+        monad_event_is_snapshot_file(
+            fd, snapshot_file_str.c_str(), &is_snapshot));
     EXPECT_TRUE(is_snapshot);
     close(fd);
 
@@ -62,13 +69,17 @@ TEST(EventSnapshotTest, Decompress)
 {
     fs::path const snapshot_file =
         fs::path{TEST_DATA_DIR} / "data" / "event" / "emn-1b-15m.snapshot";
-    int fd_in = open(snapshot_file.c_str(), O_RDONLY);
+    std::string const snapshot_file_str = snapshot_file.string();
+    int fd_in = open(snapshot_file_str.c_str(), O_RDONLY);
     int fd_out;
     ASSERT_NE(fd_in, -1);
     ASSERT_EQ(
         0,
         monad_event_decompress_snapshot_fd(
-            fd_in, MONAD_EVENT_NO_MAX_SIZE, snapshot_file.c_str(), &fd_out));
+            fd_in,
+            MONAD_EVENT_NO_MAX_SIZE,
+            snapshot_file_str.c_str(),
+            &fd_out));
 
     // When the above succeeds, decompressed fd_out contents must be mmap-able
     // as if it were a normal event ring file
@@ -76,7 +87,7 @@ TEST(EventSnapshotTest, Decompress)
     ASSERT_EQ(
         0,
         monad_event_ring_mmap(
-            &ring, PROT_READ, 0, fd_out, 0, snapshot_file.c_str()));
+            &ring, PROT_READ, 0, fd_out, 0, snapshot_file_str.c_str()));
     monad_event_ring_unmap(&ring);
     close(fd_out);
 
@@ -84,7 +95,7 @@ TEST(EventSnapshotTest, Decompress)
     ASSERT_EQ(
         ENOBUFS,
         monad_event_decompress_snapshot_fd(
-            fd_in, 1024, snapshot_file.c_str(), &fd_out));
+            fd_in, 1024, snapshot_file_str.c_str(), &fd_out));
 
     // Open a non-snapshot file, check that decompression returns EPROTO
     // (our conventional "wrong format" error code)

@@ -19,7 +19,6 @@
 #include <bit>
 #include <chrono>
 #include <cstdint>
-#include <print>
 #include <string_view>
 #include <thread>
 
@@ -71,7 +70,7 @@ TEST(LogFFI, Basic)
     EXPECT_TRUE(strncmp(FIRST_ERROR, output.message, sizeof FIRST_ERROR));
     EXPECT_EQ(strlen(output.message), output.message_len);
 
-    std::print(stderr, "First log message is: {}", output.message);
+    fmt::print(stderr, "First log message is: {}", output.message);
     free(const_cast<char *>(output.message));
     output = {};
 
@@ -91,7 +90,7 @@ TEST(LogFFI, Basic)
     EXPECT_TRUE(strncmp(SECOND_ERROR, output.message, sizeof SECOND_ERROR));
     EXPECT_EQ(strlen(output.message), output.message_len);
 
-    std::print(stderr, "Second log message is: {}", output.message);
+    fmt::print(stderr, "Second log message is: {}", output.message);
     free(const_cast<char *>(output.message));
     output = {};
 

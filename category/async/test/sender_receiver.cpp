@@ -52,6 +52,10 @@
 #include <cstddef>
 #include <cstdlib>
 #include <cstring>
+
+#ifdef _WIN32
+    #include <malloc.h> // for _aligned_malloc/_aligned_free
+#endif
 #include <functional>
 #include <iostream>
 #include <memory>
@@ -189,10 +193,17 @@ TEST_F(AsyncIO, read_multiple_buffer_sender_receiver)
         void reset() {}
     };
 
+#ifdef _WIN32
+    std::byte *buffer =
+        (std::byte *)_aligned_malloc(DISK_PAGE_SIZE * 4, DISK_PAGE_SIZE);
+    auto const unbuffer =
+        monad::make_scope_exit([&]() noexcept { _aligned_free(buffer); });
+#else
     std::byte *buffer =
         (std::byte *)aligned_alloc(DISK_PAGE_SIZE, DISK_PAGE_SIZE * 4);
     auto const unbuffer =
         monad::make_scope_exit([&]() noexcept { free(buffer); });
+#endif
     std::vector<read_multiple_buffer_sender::buffer_type> inbuffers;
     inbuffers.emplace_back(buffer + 0, DISK_PAGE_SIZE);
     inbuffers.emplace_back(buffer + DISK_PAGE_SIZE, DISK_PAGE_SIZE);

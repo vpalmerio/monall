@@ -901,10 +901,14 @@ int main(int const argc, char *argv[])
 
         auto *const context =
             monad_db_snapshot_filesystem_write_user_context_create(
-                dump_binary_snapshot.value().c_str(), version);
+                dump_binary_snapshot.value().string().c_str(), version);
+        std::vector<std::string> dbname_path_strings;
+        dbname_path_strings.reserve(dbname_paths.size());
         std::vector<char const *> c_dbname_paths;
+        c_dbname_paths.reserve(dbname_paths.size());
         for (auto const &path : dbname_paths) {
-            c_dbname_paths.emplace_back(path.c_str());
+            c_dbname_paths.emplace_back(
+                dbname_path_strings.emplace_back(path.string()).c_str());
         }
         [[maybe_unused]] auto const begin = std::chrono::steady_clock::now();
         bool const success = monad_db_dump_snapshot(
@@ -927,16 +931,20 @@ int main(int const argc, char *argv[])
         return success == false;
     }
     else if (load_binary_snapshot.has_value()) {
+        std::vector<std::string> dbname_path_strings;
+        dbname_path_strings.reserve(dbname_paths.size());
         std::vector<char const *> c_dbname_paths;
+        c_dbname_paths.reserve(dbname_paths.size());
         for (auto const &path : dbname_paths) {
-            c_dbname_paths.emplace_back(path.c_str());
+            c_dbname_paths.emplace_back(
+                dbname_path_strings.emplace_back(path.string()).c_str());
         }
         [[maybe_unused]] auto const begin = std::chrono::steady_clock::now();
         monad_db_snapshot_load_filesystem(
             c_dbname_paths.data(),
             c_dbname_paths.size(),
             sq_thread_cpu.value_or(std::numeric_limits<unsigned>::max()),
-            load_binary_snapshot.value().c_str(),
+            load_binary_snapshot.value().string().c_str(),
             version);
         LOG_INFO(
             "snapshot version={} load_binary_snapshot={} elapsed={}",

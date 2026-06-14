@@ -144,7 +144,7 @@ TEST(DbBinarySnapshot, Basic)
     {
         auto *const context =
             monad_db_snapshot_filesystem_write_user_context_create(
-                snapshot_dir.path.c_str(), 100);
+                snapshot_dir.path.string().c_str(), 100);
         char const *dbname_paths[] = {src_db.path.c_str()};
         EXPECT_TRUE(monad_db_dump_snapshot(
             dbname_paths,
@@ -169,7 +169,7 @@ TEST(DbBinarySnapshot, Basic)
             dbname_paths_new,
             1,
             static_cast<unsigned>(-1),
-            snapshot_dir.path.c_str(),
+            snapshot_dir.path.string().c_str(),
             100);
     }
 
@@ -266,7 +266,7 @@ TEST(DbBinarySnapshot, MultipleShards)
 
             auto *const context =
                 monad_db_snapshot_filesystem_write_user_context_create(
-                    shard_root.c_str(), 100);
+                    shard_root.string().c_str(), 100);
             char const *dbname_paths[] = {src_db.path.c_str()};
             EXPECT_TRUE(monad_db_dump_snapshot(
                 dbname_paths,
@@ -321,7 +321,7 @@ TEST(DbBinarySnapshot, MultipleShards)
             dbname_paths_new,
             1,
             static_cast<unsigned>(-1),
-            combined_root.path.c_str(),
+            combined_root.path.string().c_str(),
             100);
     }
     {

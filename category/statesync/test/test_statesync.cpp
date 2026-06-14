@@ -40,7 +40,7 @@
 #include <deque>
 #include <filesystem>
 #include <fstream>
-#include <sys/sysinfo.h>
+#include <thread>
 
 using namespace monad;
 using namespace monad::mpt;
@@ -74,7 +74,8 @@ namespace
             -1 !=
             ::ftruncate(fd, static_cast<off_t>(8ULL * 1024 * 1024 * 1024)));
         ::close(fd);
-        char const *const path = dbname.c_str();
+        std::string const path_str = dbname.string();
+        char const *const path = path_str.c_str();
         mpt::Db const db{
             std::make_unique<OnDiskMachine>(),
             mpt::OnDiskDbConfig{.append = false, .dbname_paths = {path}}};
@@ -169,7 +170,8 @@ namespace
         {
             cctx = new monad_statesync_client_context{
                 {cdbname},
-                std::make_optional(static_cast<unsigned>(get_nprocs() - 1)),
+                std::make_optional(
+                    std::thread::hardware_concurrency() - 1),
                 4,
                 &client,
                 &statesync_send_request};

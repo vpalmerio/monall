@@ -16,17 +16,22 @@
 add_trie_test(TARGET append_test SOURCES "append_test.cpp")
 add_trie_test(TARGET big_endian_serialization_test SOURCES
               "big_endian_serialization_test.cpp")
-add_trie_test(
-  TARGET
-  cli_tool_test
-  SOURCES
-  "cli_tool_test.cpp"
-  "../cli_tool_impl.cpp"
-  LINK_LIBRARIES
-  PkgConfig::zstd
-  PkgConfig::archive)
-target_compile_definitions(cli_tool_test
-                           PRIVATE GIT_COMMIT_HASH="${GIT_COMMIT_HASH}")
+if(NOT WIN32)
+  # Uses mkstemp/unlink/ftruncate and other POSIX file APIs throughout, and
+  # exercises the storage_pool/AsyncIO-backed restore/archive paths, which
+  # are not yet implemented on Windows.
+  add_trie_test(
+    TARGET
+    cli_tool_test
+    SOURCES
+    "cli_tool_test.cpp"
+    "../cli_tool_impl.cpp"
+    LINK_LIBRARIES
+    PkgConfig::zstd
+    PkgConfig::archive)
+  target_compile_definitions(cli_tool_test
+                             PRIVATE GIT_COMMIT_HASH="${GIT_COMMIT_HASH}")
+endif()
 add_trie_test(TARGET compact_encode_test SOURCES "compact_encode_test.cpp")
 add_trie_test(TARGET compaction_test SOURCES "compaction_test.cpp")
 add_trie_test(TARGET db_metadata_test SOURCES "db_metadata_test.cpp")
@@ -59,12 +64,16 @@ add_trie_test(TARGET unsigned_20_test SOURCES "unsigned_20_test.cpp")
 add_trie_test(TARGET virtual_offset_test SOURCES "virtual_offset_test.cpp")
 
 # monad trie perf test
-add_executable(monad_trie_test "monad_trie_test.cpp")
-monad_compile_options(monad_trie_test)
-target_include_directories(monad_trie_test
-                           PRIVATE "${PROJECT_SOURCE_DIR}/third_party")
-target_link_libraries(monad_trie_test PUBLIC monad_execution CLI11::CLI11
-                      quill::quill)
+if(NOT WIN32)
+  # Uses <linux/fs.h> (BLKDISCARD etc.) for disk cache-dropping, which has no
+  # Windows equivalent.
+  add_executable(monad_trie_test "monad_trie_test.cpp")
+  monad_compile_options(monad_trie_test)
+  target_include_directories(monad_trie_test
+                             PRIVATE "${PROJECT_SOURCE_DIR}/third_party")
+  target_link_libraries(monad_trie_test PUBLIC monad_execution CLI11::CLI11
+                        quill::quill)
+endif()
 
 add_executable(monad_trie_test_statistical_generation_test
                "monad_trie_test_statistical_generation_test.cpp")
@@ -73,7 +82,12 @@ target_link_libraries(monad_trie_test_statistical_generation_test
                       PUBLIC monad_core)
 
 # stress test
-add_executable(read_only_db_stress_test "read_only_db_stress_test.cpp")
-monad_compile_options(read_only_db_stress_test)
-target_link_libraries(
-  read_only_db_stress_test PUBLIC monad_execution CLI11::CLI11 quill::quill)
+if(NOT WIN32)
+  # Uses POSIX alarm()/sigaction(SIGALRM) for its run-time watchdog, which
+  # has no equivalent here yet; the async I/O it stresses is also not yet
+  # implemented on Windows.
+  add_executable(read_only_db_stress_test "read_only_db_stress_test.cpp")
+  monad_compile_options(read_only_db_stress_test)
+  target_link_libraries(
+    read_only_db_stress_test PUBLIC monad_execution CLI11::CLI11 quill::quill)
+endif()

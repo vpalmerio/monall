@@ -38,8 +38,15 @@ TEST(BlockDb, ReadNonDecompressableBlock)
     Block block;
     BlockDb const block_db(test_resource::bad_decompress_block_data_dir);
     // DECOMPRESS_ERROR
+#ifdef _WIN32
+    // testing::KilledBySignal is unavailable on Windows (gtest gates it on
+    // !GTEST_OS_WINDOWS); abort() exits the process with code 3 there.
+    EXPECT_EXIT(
+        block_db.get(46'402u, block), testing::ExitedWithCode(3), "");
+#else
     EXPECT_EXIT(
         block_db.get(46'402u, block), testing::KilledBySignal(SIGABRT), "");
+#endif
 }
 
 TEST(BlockDb, ReadNonDecodeableBlock)
@@ -47,8 +54,15 @@ TEST(BlockDb, ReadNonDecodeableBlock)
     Block block;
     BlockDb const block_db(test_resource::bad_decode_block_data_dir);
     // DECODE_ERROR
+#ifdef _WIN32
+    // testing::KilledBySignal is unavailable on Windows (gtest gates it on
+    // !GTEST_OS_WINDOWS); abort() exits the process with code 3 there.
+    EXPECT_EXIT(
+        block_db.get(46'402u, block), testing::ExitedWithCode(3), "");
+#else
     EXPECT_EXIT(
         block_db.get(46'402u, block), testing::KilledBySignal(SIGABRT), "");
+#endif
 }
 
 TEST(BlockDb, DecompressBlock46402)

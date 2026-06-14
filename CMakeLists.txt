@@ -211,6 +211,15 @@ function(monad_add_test target)
   monad_compile_options(${target})
   target_compile_options(${target} PUBLIC "-Wno-missing-field-initializers"
   )# TODO
+  if(WIN32)
+    # gtest's GetTypeName() demangles typeid names via __cxa_demangle();
+    # mingw's libstdc++ demangler crashes with heap corruption on the very
+    # long mangled names produced by typed tests parameterized on
+    # structural (class-type) non-type template arguments. Disabling the
+    # cxxabi demangling path falls back to raw (mangled) type names in test
+    # output, which is cosmetic only.
+    target_compile_definitions(${target} PRIVATE GTEST_HAS_CXXABI_H_=0)
+  endif()
   target_include_directories(${target} PRIVATE "${TOP_CURRENT_BINARY_DIR}/test")
   target_link_libraries(${target} monad_execution GTest::GTest GTest::Main)
   gtest_discover_tests(

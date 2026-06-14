@@ -48,13 +48,13 @@ TEST(rlp, impl_length_length)
     result = monad::rlp::impl::length_length(65536);
     EXPECT_EQ(result, 3);
 
-    result = monad::rlp::impl::length_length((1UL << 56) - 1);
+    result = monad::rlp::impl::length_length((1ULL << 56) - 1);
     EXPECT_EQ(result, 7);
 
-    result = monad::rlp::impl::length_length(1UL << 56);
+    result = monad::rlp::impl::length_length(1ULL << 56);
     EXPECT_EQ(result, 8);
 
-    result = monad::rlp::impl::length_length(0xFFFFFFFFFFFFFFFFUL);
+    result = monad::rlp::impl::length_length(0xFFFFFFFFFFFFFFFFULL);
     EXPECT_EQ(result, 8);
 }
 
