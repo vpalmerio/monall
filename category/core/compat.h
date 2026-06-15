@@ -182,14 +182,215 @@ static inline HANDLE monad_compat_mmap_table(
     return result;
 }
 
+// VirtualAlloc2/MapViewOfFile3/UnmapViewOfFile2 implement the "placeholder
+// VA" APIs (Windows 10 1803+) used by the MAP_ANONYMOUS|PROT_NONE and
+// MAP_FIXED cases in mmap()/munmap() below for category/mpt's
+// DbMetadataContext ring-storage layout. mingw-w64's headers declare these
+// only when NTDDI_VERSION >= NTDDI_WIN10_RS4, and even then its import
+// libraries do not export them, so resolve them dynamically from
+// kernelbase.dll at first use -- same approach and rationale as
+// category/core/event/event_ring.c's resolve_placeholder_va_apis().
+typedef PVOID(WINAPI *MonadVirtualAlloc2Fn)(
+    HANDLE, PVOID, SIZE_T, ULONG, ULONG, MEM_EXTENDED_PARAMETER *, ULONG);
+typedef PVOID(WINAPI *MonadMapViewOfFile3Fn)(
+    HANDLE, HANDLE, PVOID, ULONG64, SIZE_T, ULONG, ULONG,
+    MEM_EXTENDED_PARAMETER *, ULONG);
+typedef WINBOOL(WINAPI *MonadUnmapViewOfFile2Fn)(HANDLE, PVOID, ULONG);
+
+struct MonadPlaceholderVaApis
+{
+    MonadVirtualAlloc2Fn VirtualAlloc2;
+    MonadMapViewOfFile3Fn MapViewOfFile3;
+    MonadUnmapViewOfFile2Fn UnmapViewOfFile2;
+};
+
+static inline struct MonadPlaceholderVaApis const *
+monad_compat_placeholder_va_apis(void)
+{
+    static struct MonadPlaceholderVaApis apis;
+    static volatile long resolved;
+    if (!__atomic_load_n(&resolved, __ATOMIC_ACQUIRE)) {
+        HMODULE const kernelbase = GetModuleHandleA("kernelbase.dll");
+        if (kernelbase != nullptr) {
+            apis.VirtualAlloc2 = (MonadVirtualAlloc2Fn)(void *)GetProcAddress(
+                kernelbase, "VirtualAlloc2");
+            apis.MapViewOfFile3 =
+                (MonadMapViewOfFile3Fn)(void *)GetProcAddress(
+                    kernelbase, "MapViewOfFile3");
+            apis.UnmapViewOfFile2 =
+                (MonadUnmapViewOfFile2Fn)(void *)GetProcAddress(
+                    kernelbase, "UnmapViewOfFile2");
+        }
+        __atomic_store_n(&resolved, 1, __ATOMIC_RELEASE);
+    }
+    return &apis;
+}
+
+// Bookkeeping table for category/mpt's placeholder-VA chunk-slot mappings
+// (see the MAP_ANONYMOUS|PROT_NONE and MAP_FIXED cases in mmap() below):
+// maps the address of a currently-installed MAP_FIXED view to the Win32
+// file-mapping HANDLE backing it, so a later idempotent re-install
+// (DbMetadataContext::install_chunk_mapping_) or whole-reservation
+// munmap() can CloseHandle it after UnmapViewOfFile2 reverts the view back
+// to a placeholder. Same per-TU sharing rationale as
+// monad_compat_mmap_table above -- the installer and the destructor that
+// releases the reservation are both defined in db_metadata_context.cpp.
+static inline HANDLE monad_compat_placeholder_table(
+    void *const addr, HANDLE const mapping, bool const insert)
+{
+    static struct
+    {
+        void *addr;
+        HANDLE mapping;
+    } table[64];
+    static volatile long lock;
+
+    while (__atomic_exchange_n(&lock, 1, __ATOMIC_ACQUIRE)) {
+    }
+    HANDLE result = nullptr;
+    for (size_t i = 0; i < sizeof(table) / sizeof(table[0]); ++i) {
+        bool const slot_matches =
+            insert ? table[i].addr == nullptr : table[i].addr == addr;
+        if (slot_matches) {
+            if (insert) {
+                table[i].addr = addr;
+                table[i].mapping = mapping;
+                result = mapping;
+            }
+            else {
+                result = table[i].mapping;
+                table[i].addr = nullptr;
+                table[i].mapping = nullptr;
+            }
+            break;
+        }
+    }
+    __atomic_store_n(&lock, 0, __ATOMIC_RELEASE);
+    return result;
+}
+
 // Minimal mmap()/munmap() shim covering the simple file-backed MAP_SHARED
-// mappings used by category/core/event; MAP_ANONYMOUS (used only for the
-// event ring payload buffer "wraparound" trick) is handled separately with
-// the Win32 placeholder-VA APIs and is not supported here
+// mappings used by category/core/event, plus the placeholder-VA reserve /
+// MAP_FIXED-install pattern category/mpt's DbMetadataContext uses to lay out
+// its ring-storage metadata mappings (MAP_ANONYMOUS is used only for the
+// event ring payload buffer "wraparound" trick, handled separately with the
+// Win32 placeholder-VA APIs, and for DbMetadataContext's PROT_NONE
+// reservations, handled here).
 static inline void *mmap(
     void *const addr, size_t const length, int const prot, int const flags,
     int const fd, off_t const offset)
 {
+    // DbMetadataContext reserves a PROT_NONE anonymous VA range up front
+    // (db_metadata_context.hpp:map_ring_storage_) and later MAP_FIXED-maps
+    // individual cnv-chunk file regions into slots within it. MapViewOfFile
+    // cannot place a view at a caller-chosen address, so the reservation is
+    // made with VirtualAlloc2's MEM_RESERVE_PLACEHOLDER instead; the
+    // MAP_FIXED case below splits/replaces pieces of it with
+    // MapViewOfFile3(MEM_REPLACE_PLACEHOLDER).
+    if ((flags & MAP_ANONYMOUS) && addr == nullptr && prot == PROT_NONE) {
+        struct MonadPlaceholderVaApis const *const apis =
+            monad_compat_placeholder_va_apis();
+        if (apis->VirtualAlloc2 == nullptr) {
+            errno = ENOTSUP;
+            return MAP_FAILED;
+        }
+        void *const r = apis->VirtualAlloc2(
+            nullptr,
+            nullptr,
+            length,
+            MEM_RESERVE | MEM_RESERVE_PLACEHOLDER,
+            PAGE_NOACCESS,
+            nullptr,
+            0);
+        if (r == nullptr) {
+            errno = ENOMEM;
+            return MAP_FAILED;
+        }
+        return r;
+    }
+    if ((flags & MAP_FIXED) && addr != nullptr) {
+        struct MonadPlaceholderVaApis const *const apis =
+            monad_compat_placeholder_va_apis();
+        if (apis->MapViewOfFile3 == nullptr || apis->UnmapViewOfFile2 == nullptr) {
+            errno = ENOTSUP;
+            return MAP_FAILED;
+        }
+        MEMORY_BASIC_INFORMATION mbi;
+        if (VirtualQuery(addr, &mbi, sizeof(mbi)) == 0) {
+            errno = ENOMEM;
+            return MAP_FAILED;
+        }
+        if (mbi.Type == MEM_MAPPED) {
+            // Idempotent re-install (grow/shrink/activate/replay): revert
+            // the previously-installed view back to a same-size placeholder
+            // -- MapViewOfFile3's MEM_REPLACE_PLACEHOLDER requires the
+            // target to be a placeholder of the exact view size -- and
+            // close its now-stale mapping handle.
+            if (!apis->UnmapViewOfFile2(
+                    GetCurrentProcess(), addr, MEM_PRESERVE_PLACEHOLDER)) {
+                errno = EINVAL;
+                return MAP_FAILED;
+            }
+            HANDLE const old_mapping =
+                monad_compat_placeholder_table(addr, nullptr, false);
+            if (old_mapping != nullptr) {
+                CloseHandle(old_mapping);
+            }
+        }
+        else if (length < mbi.RegionSize) {
+            // First-time slot mapping, not the last slot in the
+            // reservation: split an exact `length`-sized placeholder out of
+            // the containing reservation placeholder.
+            if (!VirtualFree(
+                    addr, length, MEM_RELEASE | MEM_PRESERVE_PLACEHOLDER)) {
+                errno = ENOMEM;
+                return MAP_FAILED;
+            }
+        }
+        // else: first-time slot mapping that exactly fills the remaining
+        // placeholder (the last slot in the reservation) -- there is
+        // nothing left to split off, and VirtualFree(MEM_RELEASE |
+        // MEM_PRESERVE_PLACEHOLDER) would fail with ERROR_INVALID_ADDRESS
+        // (487) since `addr`/`length` already describe the whole
+        // placeholder. MapViewOfFile3(MEM_REPLACE_PLACEHOLDER) below can
+        // target it directly.
+        DWORD const protect =
+            (prot & PROT_WRITE) ? PAGE_READWRITE : PAGE_READONLY;
+        HANDLE const file = (HANDLE)_get_osfhandle(fd);
+        if (file == INVALID_HANDLE_VALUE) {
+            errno = EBADF;
+            return MAP_FAILED;
+        }
+        HANDLE const mapping =
+            CreateFileMappingA(file, nullptr, protect, 0, 0, nullptr);
+        if (mapping == nullptr) {
+            errno = EACCES;
+            return MAP_FAILED;
+        }
+        void *const view = apis->MapViewOfFile3(
+            mapping,
+            GetCurrentProcess(),
+            addr,
+            (ULONG64)offset,
+            length,
+            MEM_REPLACE_PLACEHOLDER,
+            protect,
+            nullptr,
+            0);
+        if (view == nullptr) {
+            CloseHandle(mapping);
+            errno = EACCES;
+            return MAP_FAILED;
+        }
+        if (monad_compat_placeholder_table(addr, mapping, true) == nullptr) {
+            apis->UnmapViewOfFile2(
+                GetCurrentProcess(), addr, MEM_PRESERVE_PLACEHOLDER);
+            CloseHandle(mapping);
+            errno = ENOMEM;
+            return MAP_FAILED;
+        }
+        return view;
+    }
     (void)addr;
     if (flags & MAP_ANONYMOUS) {
         errno = ENOTSUP;
@@ -242,14 +443,42 @@ static inline void *mmap(
 
 static inline int munmap(void *const addr, size_t const length)
 {
-    (void)length;
     void *real_base = addr;
     HANDLE const mapping =
         monad_compat_mmap_table(addr, nullptr, nullptr, &real_base, false);
-    UnmapViewOfFile(real_base);
     if (mapping != nullptr) {
+        UnmapViewOfFile(real_base);
         CloseHandle(mapping);
+        return 0;
     }
+
+    // Not a file-backed mapping tracked above: this is a DbMetadataContext
+    // placeholder-VA reservation (see mmap()'s MAP_ANONYMOUS|PROT_NONE
+    // case), munmap()'d whole regardless of how many of its MAP_FIXED
+    // chunk-slot views are still live. Revert each live view back to a
+    // placeholder (closing its mapping handle) before releasing the entire
+    // reservation -- VirtualFree(MEM_RELEASE) cannot release memory that
+    // still holds a MapViewOfFile3 view.
+    struct MonadPlaceholderVaApis const *const apis =
+        monad_compat_placeholder_va_apis();
+    size_t off = 0;
+    while (off < length) {
+        MEMORY_BASIC_INFORMATION mbi;
+        if (VirtualQuery((char *)addr + off, &mbi, sizeof(mbi)) == 0) {
+            break;
+        }
+        if (mbi.Type == MEM_MAPPED && apis->UnmapViewOfFile2 != nullptr) {
+            HANDLE const view_mapping = monad_compat_placeholder_table(
+                mbi.BaseAddress, nullptr, false);
+            apis->UnmapViewOfFile2(
+                GetCurrentProcess(), mbi.BaseAddress, MEM_PRESERVE_PLACEHOLDER);
+            if (view_mapping != nullptr) {
+                CloseHandle(view_mapping);
+            }
+        }
+        off = (size_t)((char *)mbi.BaseAddress + mbi.RegionSize - (char *)addr);
+    }
+    VirtualFree(addr, 0, MEM_RELEASE);
     return 0;
 }
 
@@ -289,10 +518,16 @@ memfd_create(char const *const name, unsigned int const flags)
         errno = EIO;
         return -1;
     }
+    // FILE_SHARE_DELETE lets std::filesystem::remove() on this still-open
+    // handle's path succeed (DeleteFileW opens its own handle requesting
+    // delete access) -- storage_pool's anonymous-inode test fixtures call
+    // current_path()+remove() on this file while it's still open, mirroring
+    // POSIX's allow-unlink-of-open-file semantics. FILE_FLAG_DELETE_ON_CLOSE
+    // already guarantees cleanup on close regardless.
     HANDLE const h = CreateFileA(
         tmp_file,
         GENERIC_READ | GENERIC_WRITE,
-        0,
+        FILE_SHARE_DELETE,
         nullptr,
         CREATE_ALWAYS,
         FILE_ATTRIBUTE_TEMPORARY | FILE_FLAG_DELETE_ON_CLOSE,
@@ -399,9 +634,31 @@ static inline int fsync(int const fd)
 static inline int msync(void *const addr, size_t const length, int const flags)
 {
     (void)flags;
-    if (!FlushViewOfFile(addr, length)) {
-        errno = EIO;
-        return -1;
+    // DbMetadataContext's ring spans are placeholder-VA reservations (see
+    // mmap()'s MAP_ANONYMOUS|PROT_NONE and MAP_FIXED cases above): only some
+    // sub-ranges are backed by individual MapViewOfFile3 views (one per
+    // chunk slot), the rest remain PROT_NONE placeholders. Unlike Linux's
+    // msync -- a no-op over anonymous pages, tolerant of a range spanning
+    // multiple mappings -- FlushViewOfFile operates on a single view and
+    // fails if given an address/length it doesn't own. Walk the region and
+    // flush only the MEM_MAPPED sub-ranges, skipping placeholders.
+    size_t off = 0;
+    while (off < length) {
+        MEMORY_BASIC_INFORMATION mbi;
+        if (VirtualQuery((char *)addr + off, &mbi, sizeof(mbi)) == 0) {
+            errno = EIO;
+            return -1;
+        }
+        size_t const region_end = (size_t)(
+            (char *)mbi.BaseAddress + mbi.RegionSize - (char *)addr);
+        size_t const end = region_end < length ? region_end : length;
+        if (mbi.Type == MEM_MAPPED) {
+            if (!FlushViewOfFile((char *)addr + off, end - off)) {
+                errno = EIO;
+                return -1;
+            }
+        }
+        off = end;
     }
     return 0;
 }
