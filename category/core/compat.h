@@ -136,17 +136,20 @@ dprintf(int const fd, char const *const fmt, ...)
 }
 
 // Shared table used by mmap()/munmap() below to recover the Win32 file
-// mapping object handle that corresponds to a view's base address; the table
-// is a function-local static, so each translation unit that calls mmap() and
+// mapping object handle and the view's real (allocation-granularity-aligned)
+// base address from the address returned to the caller; the table is a
+// function-local static, so each translation unit that calls mmap() and
 // munmap() shares its own private table (mmap/munmap pairs never cross a
 // translation unit in this codebase)
-static inline HANDLE
-monad_compat_mmap_table(void *const addr, HANDLE const mapping, bool const insert)
+static inline HANDLE monad_compat_mmap_table(
+    void *const addr, HANDLE const mapping, void *const real_base,
+    void **const real_base_out, bool const insert)
 {
     static struct
     {
         void *addr;
         HANDLE mapping;
+        void *real_base;
     } table[32];
     static volatile long lock;
 
@@ -160,12 +163,17 @@ monad_compat_mmap_table(void *const addr, HANDLE const mapping, bool const inser
             if (insert) {
                 table[i].addr = addr;
                 table[i].mapping = mapping;
+                table[i].real_base = real_base;
                 result = mapping;
             }
             else {
                 result = table[i].mapping;
+                if (real_base_out != nullptr) {
+                    *real_base_out = table[i].real_base;
+                }
                 table[i].addr = nullptr;
                 table[i].mapping = nullptr;
+                table[i].real_base = nullptr;
             }
             break;
         }
@@ -201,31 +209,44 @@ static inline void *mmap(
         errno = EACCES;
         return MAP_FAILED;
     }
+    // MapViewOfFile's offset must be aligned to the system allocation
+    // granularity (64Kb on all current Windows architectures), unlike
+    // mmap(2)'s page-size (4Kb) alignment requirement on Linux. Round the
+    // requested offset down to the nearest 64Kb boundary and map the extra
+    // leading bytes too, then return a pointer adjusted forward by the
+    // difference so the caller sees its requested offset.
+    uint64_t const granularity = 65536;
+    uint64_t const aligned_offset = (uint64_t)offset & ~(granularity - 1);
+    size_t const diff = (size_t)((uint64_t)offset - aligned_offset);
     void *const base = MapViewOfFile(
         mapping,
         access,
-        (DWORD)((uint64_t)offset >> 32),
-        (DWORD)((uint64_t)offset & 0xffffffffu),
-        length);
+        (DWORD)(aligned_offset >> 32),
+        (DWORD)(aligned_offset & 0xffffffffu),
+        length + diff);
     if (base == nullptr) {
         CloseHandle(mapping);
         errno = EACCES;
         return MAP_FAILED;
     }
-    if (monad_compat_mmap_table(base, mapping, true) == nullptr) {
+    void *const ret = (char *)base + diff;
+    if (monad_compat_mmap_table(ret, mapping, base, nullptr, true) ==
+        nullptr) {
         UnmapViewOfFile(base);
         CloseHandle(mapping);
         errno = ENOMEM;
         return MAP_FAILED;
     }
-    return base;
+    return ret;
 }
 
 static inline int munmap(void *const addr, size_t const length)
 {
     (void)length;
-    HANDLE const mapping = monad_compat_mmap_table(addr, nullptr, false);
-    UnmapViewOfFile(addr);
+    void *real_base = addr;
+    HANDLE const mapping =
+        monad_compat_mmap_table(addr, nullptr, nullptr, &real_base, false);
+    UnmapViewOfFile(real_base);
     if (mapping != nullptr) {
         CloseHandle(mapping);
     }

@@ -17,7 +17,14 @@
 
 #include <category/core/io/config.hpp>
 
-#ifndef _WIN32
+#ifdef _WIN32
+    // <ioringapi.h> declares BuildIoRingWriteFile etc. in terms of
+    // FILE_WRITE_FLAGS/FILE_FLUSH_MODE, which it assumes are already visible
+    // from <winbase.h> (it only pulls in <minwinbase.h> itself).
+    #include <windows.h>
+
+    #include <ioringapi.h>
+#else
     #include <liburing.h>
 #endif
 
@@ -49,8 +56,7 @@ struct RingConfig
 class Ring final
 {
 #ifdef _WIN32
-    // Placeholder layout until the full IoRing port lands; nothing on
-    // Windows constructs a Ring for real yet.
+    HIORING ring_{nullptr};
     RingConfig const config_;
 #else
     io_uring ring_;
@@ -66,7 +72,16 @@ public:
     Ring &operator=(Ring const &) = delete;
     Ring &operator=(Ring &&) = delete;
 
-#ifndef _WIN32
+#ifdef _WIN32
+    // Distinct name from Linux's get_ring()/get_params(): the two are never
+    // compiled in the same TU (no ODR concern), but a distinct name keeps
+    // call sites in io_windows.cpp/buffers.cpp self-documenting about which
+    // API surface they're using.
+    [[gnu::always_inline]] HIORING get_handle() const
+    {
+        return ring_;
+    }
+#else
     [[gnu::always_inline]] io_uring const &get_ring() const
     {
         return ring_;
@@ -104,6 +119,8 @@ public:
     [[gnu::always_inline]] bool must_call_uring_submit() const
     {
 #ifdef _WIN32
+        // IoRing has no SQPOLL-equivalent kernel-polling thread: userspace
+        // must always call SubmitIoRing to make queued entries visible.
         return true;
 #else
         return !(params_.flags & IORING_SETUP_SQPOLL);

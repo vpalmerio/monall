@@ -13,27 +13,47 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-// Windows placeholder for category/async/util.cpp. The helpers here rely on
-// Linux-specific O_TMPFILE/O_DIRECT temporary file semantics and statfs(2),
-// which have no equivalent on Windows. No Phase 2 test calls these -- they
-// abort if ever reached. See the Windows port plan for the follow-up
-// storage_pool functional port.
-
 #include <category/async/util.hpp>
 
 #include <category/core/assert.h>
+#include <category/core/compat.h>
+
+#include <cerrno>
+#include <cstring>
+#include <string>
 
 MONAD_ASYNC_NAMESPACE_BEGIN
 
 std::filesystem::path const &working_temporary_directory()
 {
-    MONAD_ABORT_PRINTF(
-        "working_temporary_directory not yet implemented on Windows");
+    // Linux's version exists mainly to AVOID tmpfs (O_DIRECT doesn't work
+    // there), via fstatfs()/TMPFS_MAGIC rejection. NTFS temporary
+    // directories are real disk-backed and Windows has no O_DIRECT/tmpfs
+    // distinction, so that detection logic has no analog here -- just use
+    // whatever GetTempPathA resolves (TMP/TEMP/USERPROFILE/Windows dir, in
+    // that order).
+    static std::filesystem::path const v = [] {
+        char buf[MAX_PATH + 1];
+        DWORD const n = GetTempPathA(sizeof(buf), buf);
+        MONAD_ASSERT_PRINTF(
+            n != 0 && n < sizeof(buf),
+            "GetTempPathA failed due to %lu",
+            GetLastError());
+        return std::filesystem::path(std::string(buf, n));
+    }();
+    return v;
 }
 
 int make_temporary_inode() noexcept
 {
-    MONAD_ABORT_PRINTF("make_temporary_inode not yet implemented on Windows");
+    // memfd_create() in category/core/compat.h already implements an
+    // auto-delete-on-close temporary file (GetTempFileNameA +
+    // FILE_FLAG_DELETE_ON_CLOSE + _open_osfhandle), which is exactly the
+    // "already deleted, no cleanup needed" file this function promises.
+    // Reuse it rather than duplicating the CreateFileA/_open_osfhandle dance.
+    int const fd = ::memfd_create("monad", 0);
+    MONAD_ASSERT_PRINTF(fd != -1, "failed due to %s", strerror(errno));
+    return fd;
 }
 
 MONAD_ASYNC_NAMESPACE_END

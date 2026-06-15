@@ -38,6 +38,14 @@ function(monad_compile_options target)
     # typical Linux default (8 MiB, via ulimit -s). The EVM call stack can
     # recurse up to 1024 levels deep, which overflows the smaller default.
     target_link_options(${target} PRIVATE "-Wl,--stack,8388608")
+
+    # category/async's Windows IoRing port needs BuildIoRingWriteFile and
+    # IOSQE_FLAGS_DRAIN_PRECEDING_OPS, which <ioringapi.h> only declares when
+    # NTDDI_VERSION targets the Windows 11 24H2 SDK level (NTDDI_WIN10_NI).
+    # IoRing itself doesn't exist before Windows 11, so this doesn't lower
+    # the practical minimum OS any further than IoRing already does.
+    target_compile_definitions(${target} PUBLIC
+      "_WIN32_WINNT=0x0A00" "WINVER=0x0A00" "NTDDI_VERSION=0x0A00000C")
   endif()
 
   target_compile_options(

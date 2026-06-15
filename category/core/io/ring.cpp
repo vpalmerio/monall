@@ -23,14 +23,32 @@
 
 MONAD_IO_NAMESPACE_BEGIN
 
-// Placeholder until the full IoRing port lands; nothing on Windows
-// constructs a Ring for real yet.
+// Request IORING_VERSION_3: BuildIoRingWriteFile (and
+// IOSQE_FLAGS_DRAIN_PRECEDING_OPS, used by the write path to order a write
+// after preceding reads on a shared ring) return CO_E_NOT_SUPPORTED on a
+// ring created with IORING_VERSION_2 -- writes are a V3 feature.
+//
+// sq_thread_cpu is ignored: IoRing has no kernel-thread-polling
+// configuration analogous to io_uring's IORING_SETUP_SQPOLL/SQ_AFF.
 Ring::Ring(RingConfig const &config)
     : config_{config}
 {
+    HRESULT const hr = CreateIoRing(
+        IORING_VERSION_3,
+        {IORING_CREATE_REQUIRED_FLAGS_NONE, IORING_CREATE_ADVISORY_FLAGS_NONE},
+        config.entries,
+        config.entries,
+        &ring_);
+    MONAD_ASSERT_PRINTF(
+        SUCCEEDED(hr), "CreateIoRing failed with HRESULT 0x%08lx", hr);
 }
 
-Ring::~Ring() = default;
+Ring::~Ring()
+{
+    if (ring_ != nullptr) {
+        CloseIoRing(ring_);
+    }
+}
 
 MONAD_IO_NAMESPACE_END
 

@@ -63,7 +63,69 @@ Buffers::Buffers(
               ? 0
               : (write_buf_->get_size() / write_size)}
 {
-#ifndef _WIN32
+#ifdef _WIN32
+    // Unlike Linux's io_uring_register_buffers (a direct syscall), IoRing's
+    // BuildIoRingRegisterBuffers only enqueues an SQE; the registration
+    // doesn't take effect (and the buffer indices it allocates aren't usable)
+    // until that SQE is submitted and its completion observed.
+    auto do_register_buffers = [](HIORING const ring,
+                                   IORING_BUFFER_INFO const *const buffers,
+                                   UINT32 const count,
+                                   std::source_location loc =
+                                       std::source_location::current()) {
+        HRESULT hr = BuildIoRingRegisterBuffers(ring, count, buffers, 0);
+        if (FAILED(hr)) {
+            std::cerr << "FATAL: BuildIoRingRegisterBuffers in buffers.cpp "
+                         "at line "
+                      << loc.line() << " failed with HRESULT 0x" << std::hex
+                      << hr << std::endl;
+            std::terminate();
+        }
+        UINT32 submitted = 0;
+        hr = SubmitIoRing(ring, 1, INFINITE, &submitted);
+        if (FAILED(hr)) {
+            std::cerr << "FATAL: SubmitIoRing in buffers.cpp at line "
+                      << loc.line() << " failed with HRESULT 0x" << std::hex
+                      << hr << std::endl;
+            std::terminate();
+        }
+        IORING_CQE cqe;
+        hr = PopIoRingCompletion(ring, &cqe);
+        if (FAILED(hr) || FAILED(cqe.ResultCode)) {
+            std::cerr
+                << "FATAL: PopIoRingCompletion for RegisterBuffers in "
+                   "buffers.cpp at line "
+                << loc.line() << " failed with HRESULT 0x" << std::hex << hr
+                << " / cqe.ResultCode 0x" << cqe.ResultCode << std::endl;
+            std::terminate();
+        }
+    };
+    // Registration order is preserved: read -> index 0, write -> index 1 on
+    // the same ring (mixed); index 0 on each ring when segregated. This
+    // matches Buffers::get_read_index()==0 / get_write_index()==1.
+    if (wr_ring_ != nullptr) {
+        IORING_BUFFER_INFO const read_info{
+            read_buf_.get_data(), static_cast<UINT32>(read_buf_.get_size())};
+        IORING_BUFFER_INFO const write_info{
+            write_buf_.value().get_data(),
+            static_cast<UINT32>(write_buf_.value().get_size())};
+        do_register_buffers(ring_.get_handle(), &read_info, 1);
+        do_register_buffers(wr_ring_->get_handle(), &write_info, 1);
+    }
+    else if (!write_buf_.has_value()) {
+        IORING_BUFFER_INFO const read_info{
+            read_buf_.get_data(), static_cast<UINT32>(read_buf_.get_size())};
+        do_register_buffers(ring_.get_handle(), &read_info, 1);
+    }
+    else {
+        IORING_BUFFER_INFO const infos[2]{
+            {read_buf_.get_data(),
+             static_cast<UINT32>(read_buf_.get_size())},
+            {write_buf_.value().get_data(),
+             static_cast<UINT32>(write_buf_.value().get_size())}};
+        do_register_buffers(ring_.get_handle(), infos, 2);
+    }
+#else
     auto do_register_buffers = [](io_uring *const ring,
                                   const struct iovec *const iovecs,
                                   unsigned const nr_iovecs,
@@ -106,7 +168,11 @@ Buffers::Buffers(
 
 Buffers::~Buffers()
 {
-#ifndef _WIN32
+#ifdef _WIN32
+    // IoRing has no unregister-buffers operation; CloseIoRing (in Ring's
+    // destructor, which runs after Buffers') releases all registrations at
+    // whole-ring granularity.
+#else
     if (wr_ring_ != nullptr) {
         MONAD_ASSERT(!io_uring_unregister_buffers(&wr_ring_->get_ring()));
     }
