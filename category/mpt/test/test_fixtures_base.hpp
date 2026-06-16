@@ -459,8 +459,16 @@ namespace monad::test
                         MONAD_ASYNC_NAMESPACE::use_anonymous_inode_tag{},
                         flags);
                 }
-                char temppath[] = "monad_test_fixture_XXXXXX";
-                int const fd = mkstemp(temppath);
+                // On Windows, mkstemp() routes through libmingwex.a →
+                // _sopen() in msvcrt.dll. ftruncate / fstat / pread /
+                // pwrite come from ucrtbase.dll and use its separate fd
+                // table, so an fd from mkstemp is invisible to them
+                // (→ EBADF → abort). make_temp_file() uses CreateFileA +
+                // _open_osfhandle to place the fd in ucrtbase's table.
+                auto const [fd, temppath2] =
+                    MONAD_ASYNC_NAMESPACE::make_temp_file(
+                        MONAD_ASYNC_NAMESPACE::working_temporary_directory() /
+                        "monad_test_fixture_XXXXXX");
                 if (-1 == fd) {
                     abort();
                 }
@@ -470,10 +478,10 @@ namespace monad::test
                                       MONAD_ASYNC_NAMESPACE::AsyncIO::
                                           MONAD_IO_BUFFERS_WRITE_SIZE +
                                   24576)) {
+                    ::close(fd);
                     abort();
                 }
                 ::close(fd);
-                std::filesystem::path temppath2(temppath);
                 return MONAD_ASYNC_NAMESPACE::storage_pool(
                     {&temppath2, 1},
                     MONAD_ASYNC_NAMESPACE::storage_pool::mode::create_if_needed,

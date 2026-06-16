@@ -225,12 +225,11 @@ TEST(update_aux_test, root_offsets_fast_slow)
 
 TEST(update_aux_test, configurable_root_offset_chunks)
 {
-    std::filesystem::path const filename{
+    auto const [fd, filename] = MONAD_ASYNC_NAMESPACE::make_temp_file(
         MONAD_ASYNC_NAMESPACE::working_temporary_directory() /
-        "monad_update_aux_test_XXXXXX"};
-    int const fd = ::mkstemp((char *)filename.native().data());
+        "monad_update_aux_test_XXXXXX");
     MONAD_ASSERT(fd != -1);
-    MONAD_ASSERT(-1 != ::ftruncate(fd, 8UL << 30)); // 8GB
+    MONAD_ASSERT(-1 != ::ftruncate(fd, 8ULL << 30)); // 8GB
 
     monad::io::Ring ring1;
     monad::io::Ring ring2;
@@ -991,12 +990,11 @@ TEST(update_aux_test, db_history_version_queries_per_timeline)
 // state and is orthogonal to this test's scope.
 TEST(update_aux_test, promote_persists_across_reopen)
 {
-    std::filesystem::path const filename{
+    auto const [fd, filename] = MONAD_ASYNC_NAMESPACE::make_temp_file(
         MONAD_ASYNC_NAMESPACE::working_temporary_directory() /
-        "monad_update_aux_promote_persist_XXXXXX"};
-    int const fd = ::mkstemp((char *)filename.native().data());
+        "monad_update_aux_promote_persist_XXXXXX");
     MONAD_ASSERT(fd != -1);
-    MONAD_ASSERT(-1 != ::ftruncate(fd, 8UL << 30)); // 8GB
+    MONAD_ASSERT(-1 != ::ftruncate(fd, 8ULL << 30)); // 8GB
 
     monad::async::storage_pool::creation_flags flags;
     flags.num_cnv_chunks = 5;
@@ -1082,12 +1080,11 @@ TEST(update_aux_test, promote_persists_across_reopen)
 TEST(update_aux_test, replay_completes_pending_promote_after_crash)
 {
     using monad::mpt::detail::db_metadata;
-    std::filesystem::path const filename{
+    auto const [fd, filename] = MONAD_ASYNC_NAMESPACE::make_temp_file(
         MONAD_ASYNC_NAMESPACE::working_temporary_directory() /
-        "monad_replay_pending_promote_XXXXXX"};
-    int const fd = ::mkstemp((char *)filename.native().data());
+        "monad_replay_pending_promote_XXXXXX");
     MONAD_ASSERT(fd != -1);
-    MONAD_ASSERT(-1 != ::ftruncate(fd, 8UL << 30));
+    MONAD_ASSERT(-1 != ::ftruncate(fd, 8ULL << 30));
 
     monad::async::storage_pool::creation_flags flags;
     flags.num_cnv_chunks = 5;
@@ -1174,12 +1171,11 @@ TEST(update_aux_test, replay_completes_pending_promote_after_crash)
 TEST(update_aux_test, replay_completes_pending_activate_after_crash)
 {
     using monad::mpt::detail::db_metadata;
-    std::filesystem::path const filename{
+    auto const [fd, filename] = MONAD_ASYNC_NAMESPACE::make_temp_file(
         MONAD_ASYNC_NAMESPACE::working_temporary_directory() /
-        "monad_replay_pending_activate_XXXXXX"};
-    int const fd = ::mkstemp((char *)filename.native().data());
+        "monad_replay_pending_activate_XXXXXX");
     MONAD_ASSERT(fd != -1);
-    MONAD_ASSERT(-1 != ::ftruncate(fd, 8UL << 30));
+    MONAD_ASSERT(-1 != ::ftruncate(fd, 8ULL << 30));
 
     monad::async::storage_pool::creation_flags flags;
     flags.num_cnv_chunks = 5;
@@ -1285,12 +1281,11 @@ TEST(update_aux_test, replay_completes_pending_activate_after_crash)
 TEST(update_aux_test, replay_is_noop_when_activate_already_committed)
 {
     using monad::mpt::detail::db_metadata;
-    std::filesystem::path const filename{
+    auto const [fd, filename] = MONAD_ASYNC_NAMESPACE::make_temp_file(
         MONAD_ASYNC_NAMESPACE::working_temporary_directory() /
-        "monad_replay_already_committed_XXXXXX"};
-    int const fd = ::mkstemp((char *)filename.native().data());
+        "monad_replay_already_committed_XXXXXX");
     MONAD_ASSERT(fd != -1);
-    MONAD_ASSERT(-1 != ::ftruncate(fd, 8UL << 30));
+    MONAD_ASSERT(-1 != ::ftruncate(fd, 8ULL << 30));
 
     monad::async::storage_pool::creation_flags flags;
     flags.num_cnv_chunks = 5;
@@ -1375,12 +1370,11 @@ TEST(update_aux_test, replay_is_noop_when_activate_already_committed)
 TEST(update_aux_test, replay_completes_pending_deactivate_after_crash)
 {
     using monad::mpt::detail::db_metadata;
-    std::filesystem::path const filename{
+    auto const [fd, filename] = MONAD_ASYNC_NAMESPACE::make_temp_file(
         MONAD_ASYNC_NAMESPACE::working_temporary_directory() /
-        "monad_replay_pending_deactivate_XXXXXX"};
-    int const fd = ::mkstemp((char *)filename.native().data());
+        "monad_replay_pending_deactivate_XXXXXX");
     MONAD_ASSERT(fd != -1);
-    MONAD_ASSERT(-1 != ::ftruncate(fd, 8UL << 30));
+    MONAD_ASSERT(-1 != ::ftruncate(fd, 8ULL << 30));
 
     monad::async::storage_pool::creation_flags flags;
     flags.num_cnv_chunks = 5;
@@ -1461,12 +1455,11 @@ TEST(update_aux_test, replay_completes_pending_deactivate_after_crash)
 TEST(update_aux_test, replay_completes_partial_cnv_chunks_move)
 {
     using monad::mpt::detail::db_metadata;
-    std::filesystem::path const filename{
+    auto const [fd, filename] = MONAD_ASYNC_NAMESPACE::make_temp_file(
         MONAD_ASYNC_NAMESPACE::working_temporary_directory() /
-        "monad_replay_partial_cnv_chunks_XXXXXX"};
-    int const fd = ::mkstemp((char *)filename.native().data());
+        "monad_replay_partial_cnv_chunks_XXXXXX");
     MONAD_ASSERT(fd != -1);
-    MONAD_ASSERT(-1 != ::ftruncate(fd, 8UL << 30));
+    MONAD_ASSERT(-1 != ::ftruncate(fd, 8ULL << 30));
 
     monad::async::storage_pool::creation_flags flags;
     flags.num_cnv_chunks = 5; // 4 ring chunks → activate shrinks to 2
@@ -1590,12 +1583,11 @@ TEST(update_aux_test, replay_completes_partial_cnv_chunks_move)
 TEST(update_aux_test, replay_preserves_primary_low_positions)
 {
     using monad::mpt::detail::db_metadata;
-    std::filesystem::path const filename{
+    auto const [fd, filename] = MONAD_ASYNC_NAMESPACE::make_temp_file(
         MONAD_ASYNC_NAMESPACE::working_temporary_directory() /
-        "monad_replay_preserves_primary_XXXXXX"};
-    int const fd = ::mkstemp((char *)filename.native().data());
+        "monad_replay_preserves_primary_XXXXXX");
     MONAD_ASSERT(fd != -1);
-    MONAD_ASSERT(-1 != ::ftruncate(fd, 8UL << 30));
+    MONAD_ASSERT(-1 != ::ftruncate(fd, 8ULL << 30));
 
     monad::async::storage_pool::creation_flags flags;
     flags.num_cnv_chunks = 5;
@@ -1676,12 +1668,11 @@ TEST(update_aux_test, replay_preserves_primary_low_positions)
 TEST(update_aux_test, replay_handles_single_copy_pending_stamp)
 {
     using monad::mpt::detail::db_metadata;
-    std::filesystem::path const filename{
+    auto const [fd, filename] = MONAD_ASYNC_NAMESPACE::make_temp_file(
         MONAD_ASYNC_NAMESPACE::working_temporary_directory() /
-        "monad_replay_single_copy_pending_XXXXXX"};
-    int const fd = ::mkstemp((char *)filename.native().data());
+        "monad_replay_single_copy_pending_XXXXXX");
     MONAD_ASSERT(fd != -1);
-    MONAD_ASSERT(-1 != ::ftruncate(fd, 8UL << 30));
+    MONAD_ASSERT(-1 != ::ftruncate(fd, 8ULL << 30));
 
     monad::async::storage_pool::creation_flags flags;
     flags.num_cnv_chunks = 5;

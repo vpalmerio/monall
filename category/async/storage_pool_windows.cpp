@@ -648,9 +648,44 @@ storage_pool::storage_pool(
     , is_migration_allowed_(src->is_migration_allowed_)
     , is_newly_truncated_(false)
 {
-    MONAD_ABORT_PRINTF(
-        "storage_pool clone_as_read_only_tag_ constructor not yet "
-        "implemented on Windows");
+    devices_.reserve(src->devices_.size());
+    creation_flags flags;
+    flags.open_read_only = true;
+    flags.open_read_only_allow_dirty = src->is_read_only_allow_dirty_;
+    for (auto const &src_device : src->devices_) {
+        // Unlike Linux's /proc/self/fd-derived path (which is empty for
+        // anonymous inodes), current_path() on Windows always resolves to a
+        // real path via GetFinalPathNameByHandleA -- even for
+        // FILE_FLAG_DELETE_ON_CLOSE handles -- so only the "reopen by path"
+        // branch is needed here.
+        auto const path = src_device.current_path();
+        // ::open() in MinGW routes through msvcrt.dll's fd table; fstat /
+        // pread / pwrite / _get_osfhandle all come from ucrtbase.dll and use
+        // its separate fd table → EBADF on the msvcrt fd.  Use CreateFileA +
+        // _open_osfhandle (ucrtbase) instead, matching compat.h's memfd_create.
+        std::string const path_str = path.string();
+        HANDLE const h_ro = CreateFileA(
+            path_str.c_str(),
+            GENERIC_READ,
+            FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+            nullptr,
+            OPEN_EXISTING,
+            FILE_ATTRIBUTE_NORMAL,
+            nullptr);
+        MONAD_ASSERT_PRINTF(
+            h_ro != INVALID_HANDLE_VALUE,
+            "CreateFileA(%s) failed with error %lu",
+            path_str.c_str(),
+            GetLastError());
+        int const fd = _open_osfhandle(
+            (intptr_t)h_ro, _O_RDONLY | _O_BINARY | _O_NOINHERIT);
+        MONAD_ASSERT_PRINTF(
+            fd != -1, "_open_osfhandle failed due to %s", std::strerror(errno));
+        devices_.push_back(make_device_(
+            mode::open_existing, device_t::type_t_::file, {}, fd, &src_device,
+            flags));
+    }
+    fill_chunks_(flags);
 }
 
 storage_pool::storage_pool(
@@ -661,9 +696,41 @@ storage_pool::storage_pool(
     , is_migration_allowed_(flags.allow_migration)
     , is_newly_truncated_(mode == mode::truncate)
 {
-    (void)sources;
-    MONAD_ABORT_PRINTF(
-        "storage_pool not yet implemented on Windows");
+    devices_.reserve(sources.size());
+    for (auto const &source : sources) {
+        // ::open() in MinGW routes through msvcrt.dll's fd table; fstat /
+        // pread / pwrite / _get_osfhandle all come from ucrtbase.dll and use
+        // its separate fd table → EBADF on the msvcrt fd.  Use CreateFileA +
+        // _open_osfhandle (ucrtbase) instead, matching compat.h's memfd_create.
+        bool const read_only =
+            flags.open_read_only || flags.open_read_only_allow_dirty;
+        std::string const source_str = source.string();
+        HANDLE const h_src = CreateFileA(
+            source_str.c_str(),
+            read_only ? GENERIC_READ : (GENERIC_READ | GENERIC_WRITE),
+            FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+            nullptr,
+            OPEN_EXISTING,
+            FILE_ATTRIBUTE_NORMAL,
+            nullptr);
+        MONAD_ASSERT_PRINTF(
+            h_src != INVALID_HANDLE_VALUE,
+            "CreateFileA(%s) failed with error %lu",
+            source_str.c_str(),
+            GetLastError());
+        int const fd = _open_osfhandle(
+            (intptr_t)h_src,
+            (read_only ? _O_RDONLY : _O_RDWR) | _O_BINARY | _O_NOINHERIT);
+        MONAD_ASSERT_PRINTF(
+            fd != -1, "_open_osfhandle failed due to %s", std::strerror(errno));
+        // make_device_ takes ownership of fd when path is empty, mirroring
+        // the anonymous-inode construction path below; current_path()
+        // recovers the real path via GetFinalPathNameByHandleA for
+        // diagnostics, so passing the real path through here isn't needed.
+        devices_.push_back(make_device_(
+            mode, device_t::type_t_::file, {}, fd, uint64_t(0), flags));
+    }
+    fill_chunks_(flags);
 }
 
 storage_pool::storage_pool(use_anonymous_inode_tag, creation_flags const flags)
@@ -746,8 +813,7 @@ storage_pool::chunk(chunk_type const which, uint32_t const id)
 
 storage_pool storage_pool::clone_as_read_only() const
 {
-    MONAD_ABORT_PRINTF(
-        "storage_pool::clone_as_read_only not yet implemented on Windows");
+    return storage_pool(this, clone_as_read_only_tag_{});
 }
 
 storage_pool::chunk_t storage_pool::activate_chunk(

@@ -1,4 +1,4 @@
-// Copyright (C) 2025 Category Labs, Inc.
+﻿// Copyright (C) 2025 Category Labs, Inc.
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
@@ -190,7 +190,7 @@ DbMetadataContext::DbMetadataContext(AsyncIO &io)
             auto *const o = copies_[1 - i].main;
             MONAD_ASSERT(
                 !o->is_dirty().load(std::memory_order_acquire),
-                "Both DB metadata copies are dirty — DB is unrecoverable, "
+                "Both DB metadata copies are dirty â€” DB is unrecoverable, "
                 "restore from backup.");
             (void)memcpy(m, o, metadata_mmap_size_);
         }
@@ -206,7 +206,7 @@ DbMetadataContext::DbMetadataContext(AsyncIO &io)
                 m->root_offsets.storage_.cnv_chunks_len <
                     detail::db_metadata::root_offsets_ring_t::SIZE_,
                 "MONAD007 pool has more primary cnv chunks than MONAD008's "
-                "SIZE_ cap allows — cannot migrate");
+                "SIZE_ cap allows â€” cannot migrate");
 
             // 1. Stash the list triple (at the tail of the MONAD007
             //    header) before step 2's memmove, whose destination can
@@ -933,7 +933,7 @@ void DbMetadataContext::sync_ring_data_to_disk_()
     // Sync only the currently-live prefix of each ring. Tail slots are
     // PROT_NONE anonymous reservations and need not be msync'd. If a
     // ring has chunks but the span is null, that's a construction-time
-    // invariant violation — assert rather than silently skipping.
+    // invariant violation â€” assert rather than silently skipping.
     auto const sync_ring = [this](
                                std::span<chunk_offset_t> span,
                                uint32_t chunks_len,
@@ -1097,7 +1097,7 @@ void DbMetadataContext::do_activate_secondary_body_(uint32_t const new_chunks)
         //    prior crashed run cleared pstore.cnv_chunks[k].cnv_chunk_id
         //    (step 4 below) before the cnv_chunks_len commit (step 6). The
         //    ring-copy loop at step 3 reads from those slots, so remap
-        //    them here first — derive each chunk id from pstore (if still
+        //    them here first â€” derive each chunk id from pstore (if still
         //    populated) or sstore (if already swapped over). MAP_FIXED is
         //    idempotent on the fresh-run path where pstore is fully
         //    populated and the VA is already mapped.
@@ -1165,7 +1165,7 @@ void DbMetadataContext::do_activate_secondary_body_(uint32_t const new_chunks)
         }
         // 5. Transfer the second half of chunks from primary to secondary.
         //    Idempotent: a destination slot that already holds a valid
-        //    chunk id is the "already moved" signal — skip it.
+        //    chunk id is the "already moved" signal â€” skip it.
         for (uint32_t k = 0; k < new_chunks; k++) {
             if (sstore.cnv_chunks[k].cnv_chunk_id !=
                 detail::db_metadata::NULL_CHUNK) {
@@ -1180,13 +1180,13 @@ void DbMetadataContext::do_activate_secondary_body_(uint32_t const new_chunks)
                 detail::db_metadata::NULL_CHUNK;
         }
         // 6. Initialise the secondary ring (INVALID_OFFSET fill, then
-        //    zero version fields). The secondary timeline starts empty —
+        //    zero version fields). The secondary timeline starts empty â€”
         //    next_version_ == 0 maps to INVALID_BLOCK_NUM, which signals
         //    fast_forward_next_version to seed both version fields when the
         //    secondary writes its first root. Safe to re-run during replay
         //    because replay executes in the constructor before any client
         //    thread can observe the DB, and the live-path
-        //    `activate_secondary_header` is synchronous — no client can
+        //    `activate_secondary_header` is synchronous â€” no client can
         //    push to the secondary ring until the public call has returned,
         //    at which point the pending flag has already been cleared +
         //    msync'd.
@@ -1294,7 +1294,7 @@ void DbMetadataContext::do_deactivate_secondary_body_(
         // primary_new_chunks because deactivate always doubles a
         // power-of-two primary ring by returning the secondary's chunks
         // that activate symmetrically split off. Any other value
-        // indicates metadata corruption — abort rather than compute ring
+        // indicates metadata corruption â€” abort rather than compute ring
         // masks from a non-power-of-two capacity.
         uint32_t const cur_primary_chunks = pstore.cnv_chunks_len;
         MONAD_ASSERT(
@@ -1702,3 +1702,5 @@ void DbMetadataContext::remove(uint32_t const idx) noexcept
 }
 
 MONAD_MPT_NAMESPACE_END
+
+

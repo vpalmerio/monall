@@ -53,12 +53,17 @@ namespace monad::test
 
     inline std::filesystem::path create_temp_file(long const size_gb)
     {
-        std::filesystem::path const filename{
+        auto const [fd, filename] = MONAD_ASYNC_NAMESPACE::make_temp_file(
             MONAD_ASYNC_NAMESPACE::working_temporary_directory() /
-            "monad_db_test_XXXXXX"};
-        int const fd = ::mkstemp((char *)filename.native().data());
+            "monad_db_test_XXXXXX");
         MONAD_ASSERT(fd != -1);
-        MONAD_ASSERT(-1 != ::ftruncate(fd, size_gb * 1024 * 1024 * 1024));
+        // Cast to off_t (int64_t with _FILE_OFFSET_BITS=64) before multiplying
+        // so the arithmetic uses 64-bit arithmetic rather than silently
+        // overflowing the 32-bit long type on Windows (LLP64: long is 32-bit
+        // even though off_t is widened to 64-bit by _FILE_OFFSET_BITS=64).
+        MONAD_ASSERT(
+            -1 != ::ftruncate(
+                      fd, static_cast<off_t>(size_gb) * 1024 * 1024 * 1024));
         ::close(fd);
         return filename;
     }

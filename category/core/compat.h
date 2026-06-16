@@ -337,33 +337,60 @@ static inline void *mmap(
                 CloseHandle(old_mapping);
             }
         }
-        else if (length < mbi.RegionSize) {
-            // First-time slot mapping, not the last slot in the
-            // reservation: split an exact `length`-sized placeholder out of
-            // the containing reservation placeholder.
+        else if (length < mbi.RegionSize || mbi.AllocationBase != addr) {
+            // Two cases both require a VirtualFree split before mapping:
+            //
+            // 1. length < mbi.RegionSize: first-time slot mapping, not the
+            //    last slot in the reservation -- split an exact
+            //    `length`-sized placeholder out of the containing
+            //    reservation placeholder.
+            //
+            // 2. mbi.AllocationBase != addr: the slot's placeholder is
+            //    already the right size (RegionSize == length) but is NOT
+            //    standalone -- it was created by a prior mid-placeholder
+            //    split (e.g. when a NULL_CHUNK slot was skipped in
+            //    map_ring_storage_, leaving the placeholder for that slot
+            //    and the next slot merged). MapViewOfFile3
+            //    (MEM_REPLACE_PLACEHOLDER) requires AllocationBase ==
+            //    addr; calling VirtualFree here converts this non-standalone
+            //    piece into a proper standalone placeholder that satisfies
+            //    that invariant.
             if (!VirtualFree(
                     addr, length, MEM_RELEASE | MEM_PRESERVE_PLACEHOLDER)) {
                 errno = ENOMEM;
                 return MAP_FAILED;
             }
         }
-        // else: first-time slot mapping that exactly fills the remaining
-        // placeholder (the last slot in the reservation) -- there is
-        // nothing left to split off, and VirtualFree(MEM_RELEASE |
-        // MEM_PRESERVE_PLACEHOLDER) would fail with ERROR_INVALID_ADDRESS
-        // (487) since `addr`/`length` already describe the whole
-        // placeholder. MapViewOfFile3(MEM_REPLACE_PLACEHOLDER) below can
-        // target it directly.
+        // else: AllocationBase == addr and RegionSize == length, so this
+        // placeholder is already standalone and exactly the right size.
+        // VirtualFree(MEM_RELEASE|MEM_PRESERVE_PLACEHOLDER) would fail with
+        // ERROR_INVALID_ADDRESS (487) here, so skip it.
+        // MapViewOfFile3(MEM_REPLACE_PLACEHOLDER) below can target it directly.
         DWORD const protect =
             (prot & PROT_WRITE) ? PAGE_READWRITE : PAGE_READONLY;
         HANDLE const file = (HANDLE)_get_osfhandle(fd);
         if (file == INVALID_HANDLE_VALUE) {
+            // Use OutputDebugStringA + snprintf rather than fprintf(stderr)
+            // to avoid a crash when the caller's CRT (ucrt64) differs from
+            // a loaded DLL's CRT (msvcrt) -- fprintf tries to lock the other
+            // CRT's stdout/stderr FILE*, which corrupts its lock state.
+            char _dbg_buf[128];
+            snprintf(_dbg_buf, sizeof(_dbg_buf),
+                     "mmap MAP_FIXED: _get_osfhandle(fd=%d) failed: errno=%d\n",
+                     fd, errno);
+            OutputDebugStringA(_dbg_buf);
             errno = EBADF;
             return MAP_FAILED;
         }
         HANDLE const mapping =
             CreateFileMappingA(file, nullptr, protect, 0, 0, nullptr);
         if (mapping == nullptr) {
+            char _dbg_buf[128];
+            snprintf(_dbg_buf, sizeof(_dbg_buf),
+                     "mmap MAP_FIXED: CreateFileMappingA failed: "
+                     "GetLastError=%lu protect=%lu\n",
+                     (unsigned long)GetLastError(), (unsigned long)protect);
+            OutputDebugStringA(_dbg_buf);
             errno = EACCES;
             return MAP_FAILED;
         }
@@ -378,6 +405,14 @@ static inline void *mmap(
             nullptr,
             0);
         if (view == nullptr) {
+            char _dbg_buf[256];
+            snprintf(_dbg_buf, sizeof(_dbg_buf),
+                     "mmap MAP_FIXED: MapViewOfFile3(addr=%p offset=%llu "
+                     "len=%zu protect=%lu) failed: GetLastError=%lu\n",
+                     addr, (unsigned long long)offset, length,
+                     (unsigned long)protect,
+                     (unsigned long)GetLastError());
+            OutputDebugStringA(_dbg_buf);
             CloseHandle(mapping);
             errno = EACCES;
             return MAP_FAILED;
@@ -523,11 +558,16 @@ memfd_create(char const *const name, unsigned int const flags)
     // delete access) -- storage_pool's anonymous-inode test fixtures call
     // current_path()+remove() on this file while it's still open, mirroring
     // POSIX's allow-unlink-of-open-file semantics. FILE_FLAG_DELETE_ON_CLOSE
-    // already guarantees cleanup on close regardless.
+    // already guarantees cleanup on close regardless. FILE_SHARE_READ is
+    // additionally required so storage_pool::clone_as_read_only() can reopen
+    // this same path with GENERIC_READ while this handle stays open --
+    // Windows enforces sharing based on what the first handle allowed,
+    // regardless of what the second open requests, mirroring POSIX's
+    // open-for-read-while-open-for-read+write semantics.
     HANDLE const h = CreateFileA(
         tmp_file,
         GENERIC_READ | GENERIC_WRITE,
-        FILE_SHARE_DELETE,
+        FILE_SHARE_READ | FILE_SHARE_DELETE,
         nullptr,
         CREATE_ALWAYS,
         FILE_ATTRIBUTE_TEMPORARY | FILE_FLAG_DELETE_ON_CLOSE,
