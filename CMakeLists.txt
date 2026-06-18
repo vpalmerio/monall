@@ -164,6 +164,29 @@ target_compile_options(
 # does not disable warnings in our code that includes quill headers.
 target_compile_options(quill PRIVATE -Wno-deprecated-declarations)
 
+if (MINGW)
+  # quill's own CMakeLists.txt unconditionally links ucrtbase PUBLIC on MinGW
+  # (to get a strftime that formats time correctly). That makes every
+  # consumer of quill a hybrid-CRT binary: our toolchain's default startup
+  # and the <stdio.h> stdin/stdout/stderr macros resolve through msvcrt.dll,
+  # while ucrtbase-resolved symbols use a different FILE structure layout.
+  # Any FILE*-based stdio call (fprintf, fwrite, and quill's own
+  # StreamHandler::write(), which fwrite()s log lines to stdout/stderr) can
+  # then crash inside msvcrt's _lock_file under thread contention, because
+  # msvcrt's tiny static _iob[] table doesn't recognize a ucrt FILE* and
+  # indexes out of bounds. Strip the ucrtbase requirement so the whole
+  # binary consistently uses msvcrt's CRT/stdio; we don't rely on
+  # strftime's extra format specifiers.
+  get_target_property(_quill_interface_link_libs quill
+                       INTERFACE_LINK_LIBRARIES)
+  if (_quill_interface_link_libs)
+    list(REMOVE_ITEM _quill_interface_link_libs ucrtbase)
+    set_target_properties(
+      quill PROPERTIES INTERFACE_LINK_LIBRARIES
+                        "${_quill_interface_link_libs}")
+  endif ()
+endif ()
+
 # silkpre
 set(OPTIONAL_BUILD_TESTS OFF)
 set(OLD_CMAKE_POLICY_VERSION_MINIMUM "${CMAKE_POLICY_VERSION_MINIMUM}")
