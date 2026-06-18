@@ -41,11 +41,14 @@ namespace
 
         TempDb()
             : fd{MONAD_ASYNC_NAMESPACE::make_temporary_inode()}
-            , path{"/proc/self/fd/" + std::to_string(fd)}
+            , path{MONAD_ASYNC_NAMESPACE::path_for_fd(fd).string()}
         {
+            // ftruncate()'s off_t is 32 bits on Windows (LLP64), silently
+            // truncating 8GB; resize_file() takes an explicit int64_t.
             MONAD_ASSERT(
                 -1 !=
-                ::ftruncate(fd, static_cast<off_t>(8ULL * 1024 * 1024 * 1024)));
+                MONAD_ASYNC_NAMESPACE::resize_file(
+                    fd, int64_t(8) * 1024 * 1024 * 1024));
         }
 
         TempDb(TempDb const &) = delete;
@@ -63,10 +66,15 @@ namespace
 
         TempDir()
         {
-            std::filesystem::path tmpl =
-                MONAD_ASYNC_NAMESPACE::working_temporary_directory() /
-                "monad_snapshot_test_XXXXXX";
-            char *const result = ::mkdtemp((char *)tmpl.native().data());
+            // mkdtemp() takes a narrow-char buffer, but
+            // std::filesystem::path::native() is wchar_t on Windows --
+            // casting .data() to char* there hands mkdtemp() a garbage
+            // buffer. Round-trip through std::string instead.
+            std::string tmpl =
+                (MONAD_ASYNC_NAMESPACE::working_temporary_directory() /
+                 "monad_snapshot_test_XXXXXX")
+                    .string();
+            char *const result = ::mkdtemp(tmpl.data());
             MONAD_ASSERT(result != nullptr);
             path = result;
         }

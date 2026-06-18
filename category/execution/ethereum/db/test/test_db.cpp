@@ -825,8 +825,14 @@ TYPED_TEST(DBTest, to_json)
 
 TYPED_TEST(DBTest, load_from_binary)
 {
-    std::ifstream accounts(test_resource::checkpoint_dir / "accounts");
-    std::ifstream code(test_resource::checkpoint_dir / "code");
+    // Without std::ios::binary, Windows translates CRLF<->LF on read,
+    // corrupting this binary checkpoint data (any byte sequence that looks
+    // like CRLF gets shortened), which throws off BinaryDbLoader::load()'s
+    // total_processed/total_read byte accounting.
+    std::ifstream accounts(
+        test_resource::checkpoint_dir / "accounts", std::ios::binary);
+    std::ifstream code(
+        test_resource::checkpoint_dir / "code", std::ios::binary);
     auto root = load_from_binary(this->db, accounts, code);
     TrieDb tdb{this->db};
     tdb.reset_root(root, 0);

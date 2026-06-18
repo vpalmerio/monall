@@ -139,15 +139,20 @@ namespace
 
         EthCallFixture()
             : dbname{[] {
-                std::filesystem::path dbname(
+                // mkstemp() takes a narrow-char buffer, but
+                // std::filesystem::path::native() is wchar_t on Windows --
+                // casting .data() to char* there hands mkstemp() a garbage
+                // buffer. make_temp_file()/resize_file() are the portable
+                // helpers used elsewhere in the test suite for exactly this
+                // (see category/mpt/test/test_fixtures_gtest.hpp).
+                auto const [fd, dbname] = MONAD_ASYNC_NAMESPACE::make_temp_file(
                     MONAD_ASYNC_NAMESPACE::working_temporary_directory() /
                     "monad_eth_call_test1_XXXXXX");
-                int const fd = ::mkstemp((char *)dbname.native().data());
                 MONAD_ASSERT(fd != -1);
                 MONAD_ASSERT(
                     -1 !=
-                    ::ftruncate(
-                        fd, static_cast<off_t>(8ULL * 1024 * 1024 * 1024)));
+                    MONAD_ASYNC_NAMESPACE::resize_file(
+                        fd, int64_t(8) * 1024 * 1024 * 1024));
                 ::close(fd);
                 return dbname;
             }()}

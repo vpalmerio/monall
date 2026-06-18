@@ -40,15 +40,11 @@ TEST(BlockDb, ReadNonDecompressableBlock)
     // DECOMPRESS_ERROR
 #ifdef _WIN32
     // testing::KilledBySignal is unavailable on Windows (gtest gates it on
-    // !GTEST_OS_WINDOWS). mingw/UCRT's abort() (called via MONAD_ASSERT) goes
-    // through the default _CALL_REPORTFAULT path, which raises a fail-fast
-    // exception; Windows always reports such terminations to the parent
-    // process with exit code STATUS_STACK_BUFFER_OVERRUN (0xC0000409),
-    // regardless of the actual fail-fast reason.
-    EXPECT_EXIT(
-        block_db.get(46'402u, block),
-        testing::ExitedWithCode(static_cast<int>(0xC0000409)),
-        "");
+    // !GTEST_OS_WINDOWS). This binary is deliberately linked against plain
+    // msvcrt (not ucrtbase -- see the hybrid-CRT fix), so abort() (called via
+    // MONAD_ASSERT) takes msvcrt's path: it terminates via _exit(3), not
+    // ucrtbase's fast-fail STATUS_STACK_BUFFER_OVERRUN (0xC0000409).
+    EXPECT_EXIT(block_db.get(46'402u, block), testing::ExitedWithCode(3), "");
 #else
     EXPECT_EXIT(
         block_db.get(46'402u, block), testing::KilledBySignal(SIGABRT), "");
@@ -62,15 +58,11 @@ TEST(BlockDb, ReadNonDecodeableBlock)
     // DECODE_ERROR
 #ifdef _WIN32
     // testing::KilledBySignal is unavailable on Windows (gtest gates it on
-    // !GTEST_OS_WINDOWS). mingw/UCRT's abort() (called via MONAD_ASSERT) goes
-    // through the default _CALL_REPORTFAULT path, which raises a fail-fast
-    // exception; Windows always reports such terminations to the parent
-    // process with exit code STATUS_STACK_BUFFER_OVERRUN (0xC0000409),
-    // regardless of the actual fail-fast reason.
-    EXPECT_EXIT(
-        block_db.get(46'402u, block),
-        testing::ExitedWithCode(static_cast<int>(0xC0000409)),
-        "");
+    // !GTEST_OS_WINDOWS). This binary is deliberately linked against plain
+    // msvcrt (not ucrtbase -- see the hybrid-CRT fix), so abort() (called via
+    // MONAD_ASSERT) takes msvcrt's path: it terminates via _exit(3), not
+    // ucrtbase's fast-fail STATUS_STACK_BUFFER_OVERRUN (0xC0000409).
+    EXPECT_EXIT(block_db.get(46'402u, block), testing::ExitedWithCode(3), "");
 #else
     EXPECT_EXIT(
         block_db.get(46'402u, block), testing::KilledBySignal(SIGABRT), "");

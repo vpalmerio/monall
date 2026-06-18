@@ -198,14 +198,19 @@ TEST(BlockHashBuffer, propose_after_crash)
 TEST(BlockHashBufferTest, init_from_db)
 {
     auto const path = [] {
-        std::filesystem::path dbname(
+        // mkstemp() takes a narrow-char buffer, but
+        // std::filesystem::path::native() is wchar_t on Windows -- casting
+        // .data() to char* there hands mkstemp() a garbage buffer.
+        // make_temp_file()/resize_file() are the portable helpers used
+        // elsewhere for exactly this.
+        auto const [fd, dbname] = MONAD_ASYNC_NAMESPACE::make_temp_file(
             MONAD_ASYNC_NAMESPACE::working_temporary_directory() /
             "monad_block_hash_buffer_test_XXXXXX");
-        int const fd = ::mkstemp((char *)dbname.native().data());
         MONAD_ASSERT(fd != -1);
         MONAD_ASSERT(
             -1 !=
-            ::ftruncate(fd, static_cast<off_t>(8ULL * 1024 * 1024 * 1024)));
+            MONAD_ASYNC_NAMESPACE::resize_file(
+                fd, int64_t(8) * 1024 * 1024 * 1024));
         ::close(fd);
         return dbname;
     }();
