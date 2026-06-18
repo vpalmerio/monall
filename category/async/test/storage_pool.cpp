@@ -240,6 +240,12 @@ namespace
         run_tests(pool);
     }
 
+#ifndef _WIN32
+    // Raw block devices (/dev/mapper/...) have no Windows equivalent, and
+    // storage_pool_windows.cpp's make_device_() doesn't support non-file
+    // device types at all (see its "not yet implemented on Windows" abort),
+    // so this test's expected "open failed" death message has nothing
+    // meaningful to assert here.
     TEST(StoragePool, raw_partitions)
     {
         ASSERT_DEATH(
@@ -250,6 +256,7 @@ namespace
             }),
             "open failed");
     }
+#endif
 
     TEST(StoragePool, device_interleaving)
     {
@@ -260,13 +267,17 @@ namespace
             gaps[2].clear();
             auto create_temp_file =
                 [](file_offset_t length) -> std::filesystem::path {
-                std::filesystem::path ret(
+                // mkstemp() takes a narrow-char buffer, but
+                // std::filesystem::path::native() is wchar_t on Windows --
+                // casting .data() to char* there hands mkstemp() a garbage
+                // buffer. make_temp_file()/resize_file() are the portable
+                // helpers used elsewhere for exactly this.
+                auto const [fd, ret] = make_temp_file(
                     working_temporary_directory() /
                     "monad_storage_pool_test_XXXXXX");
-                int const fd = ::mkstemp((char *)ret.native().data());
                 MONAD_ASSERT(fd != -1);
                 MONAD_ASSERT(
-                    -1 != ::ftruncate(fd, static_cast<off_t>(length + 16384)));
+                    -1 != resize_file(fd, int64_t(length + 16384)));
                 ::close(fd);
                 return ret;
             };
@@ -373,13 +384,16 @@ namespace
     {
         auto create_temp_file =
             [](file_offset_t length) -> std::filesystem::path {
-            std::filesystem::path ret(
+            // mkstemp() takes a narrow-char buffer, but
+            // std::filesystem::path::native() is wchar_t on Windows --
+            // casting .data() to char* there hands mkstemp() a garbage
+            // buffer. make_temp_file()/resize_file() are the portable
+            // helpers used elsewhere for exactly this.
+            auto const [fd, ret] = make_temp_file(
                 working_temporary_directory() /
                 "monad_storage_pool_test_XXXXXX");
-            int const fd = ::mkstemp((char *)ret.native().data());
             MONAD_ASSERT(fd != -1);
-            MONAD_ASSERT(
-                -1 != ::ftruncate(fd, static_cast<off_t>(length + 16384)));
+            MONAD_ASSERT(-1 != resize_file(fd, int64_t(length + 16384)));
             ::close(fd);
             return ret;
         };

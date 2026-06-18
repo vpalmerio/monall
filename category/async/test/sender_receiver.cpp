@@ -174,6 +174,11 @@ public:
     }
 };
 
+#ifndef _WIN32
+// Win32 IoRing has no scatter-read op; AsyncIO::submit_request_(iovec...) on
+// Windows only supports the single-iovec "long read" case used by
+// category/mpt (see io_windows.cpp), and asserts for >1 iovec. This test
+// exercises a genuine 3-iovec scatter read, which isn't implemented yet.
 TEST_F(AsyncIO, read_multiple_buffer_sender_receiver)
 {
     using namespace MONAD_ASYNC_NAMESPACE;
@@ -284,6 +289,7 @@ TEST_F(AsyncIO, read_multiple_buffer_sender_receiver)
                 shared_state_()->testfilecontents.size() - DISK_PAGE_SIZE * 2,
             DISK_PAGE_SIZE * 2));
 }
+#endif
 
 /* A receiver which just immediately asks the sender
 to reinitiate the i/o. This test models traditional

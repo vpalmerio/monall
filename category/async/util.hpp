@@ -17,8 +17,11 @@
 
 #include "config.hpp"
 
+#include <category/core/assert.h>
+
 #include <concepts>
 #include <cstdlib>
+#include <cstring>
 #include <filesystem>
 #include <string>
 #include <type_traits>
@@ -103,6 +106,37 @@ inline int resize_file(int const fd, int64_t const size_bytes)
     return 0;
 #else
     return ::ftruncate(fd, static_cast<off_t>(size_bytes));
+#endif
+}
+
+//! Returns a path that can be used to reopen the file behind `fd` by path,
+//! including for an unlinked/anonymous inode (e.g. one obtained from
+//! make_temporary_inode()).
+//!
+//! On Linux this is the /proc/self/fd/<fd> procfs alias.
+//!
+//! Windows has no equivalent magic path, so this recovers the real
+//! underlying path via GetFinalPathNameByHandleA, which works even for a
+//! FILE_FLAG_DELETE_ON_CLOSE handle (mirrors
+//! storage_pool::device_t::current_path() in storage_pool_windows.cpp).
+inline std::filesystem::path path_for_fd(int const fd)
+{
+#ifdef _WIN32
+    HANDLE const h = reinterpret_cast<HANDLE>(_get_osfhandle(fd));
+    MONAD_ASSERT_PRINTF(
+        h != INVALID_HANDLE_VALUE,
+        "_get_osfhandle failed due to %s",
+        strerror(errno));
+    char buf[MAX_PATH];
+    DWORD const len =
+        GetFinalPathNameByHandleA(h, buf, sizeof(buf), FILE_NAME_NORMALIZED);
+    MONAD_ASSERT_PRINTF(
+        len != 0 && len < sizeof(buf),
+        "GetFinalPathNameByHandleA failed due to %lu",
+        GetLastError());
+    return std::filesystem::path(std::string(buf, len));
+#else
+    return "/proc/self/fd/" + std::to_string(fd);
 #endif
 }
 

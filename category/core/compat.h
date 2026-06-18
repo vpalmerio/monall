@@ -560,13 +560,20 @@ fmemopen(void const *const buf, size_t const size, char const *const mode)
     return f;
 }
 
+// Not a real Linux MFD_* flag (none of those are defined for this Windows
+// shim, so there is no collision) -- an extension specific to this
+// compat.h so callers that will issue IoRing reads/writes against the
+// returned fd can opt into an overlapped handle, without affecting other
+// memfd_create() callers (e.g. the event ring's zstd-decompression buffer,
+// which never goes through IoRing).
+#define MONAD_MEMFD_OVERLAPPED 0x80000000u
+
 // Create an unnamed, auto-deleting temporary file and return a CRT file
 // descriptor for it; used as the destination for zstd-decompressed event
 // ring snapshot data
 static inline int
 memfd_create(char const *const name, unsigned int const flags)
 {
-    (void)flags;
     char tmp_path[MAX_PATH];
     char tmp_file[MAX_PATH];
     if (GetTempPathA(sizeof tmp_path, tmp_path) == 0) {
@@ -582,19 +589,31 @@ memfd_create(char const *const name, unsigned int const flags)
     // delete access) -- storage_pool's anonymous-inode test fixtures call
     // current_path()+remove() on this file while it's still open, mirroring
     // POSIX's allow-unlink-of-open-file semantics. FILE_FLAG_DELETE_ON_CLOSE
-    // already guarantees cleanup on close regardless. FILE_SHARE_READ is
-    // additionally required so storage_pool::clone_as_read_only() can reopen
-    // this same path with GENERIC_READ while this handle stays open --
-    // Windows enforces sharing based on what the first handle allowed,
-    // regardless of what the second open requests, mirroring POSIX's
-    // open-for-read-while-open-for-read+write semantics.
+    // already guarantees cleanup on close regardless. FILE_SHARE_READ and
+    // FILE_SHARE_WRITE are additionally required so storage_pool's
+    // named-path constructor (used via util.hpp's path_for_fd(), the
+    // Windows analogue of reopening /proc/self/fd/<fd>) can reopen this
+    // same path with GENERIC_READ | GENERIC_WRITE while this handle stays
+    // open, and so storage_pool::clone_as_read_only() can reopen it with
+    // just GENERIC_READ -- Windows enforces sharing based on what the first
+    // handle allowed, regardless of what the second open requests,
+    // mirroring POSIX's open-while-already-open semantics.
+    // FILE_FLAG_OVERLAPPED (when requested via MONAD_MEMFD_OVERLAPPED) is
+    // required so Windows IoRing can issue reads and writes to this handle,
+    // matching storage_pool_windows.cpp's named-file constructors. The
+    // pread/pwrite shims above call GetOverlappedResult to handle
+    // ERROR_IO_PENDING on overlapped handles.
+    DWORD const attrs = FILE_ATTRIBUTE_TEMPORARY | FILE_FLAG_DELETE_ON_CLOSE |
+                         ((flags & MONAD_MEMFD_OVERLAPPED)
+                              ? FILE_FLAG_OVERLAPPED
+                              : 0);
     HANDLE const h = CreateFileA(
         tmp_file,
         GENERIC_READ | GENERIC_WRITE,
-        FILE_SHARE_READ | FILE_SHARE_DELETE,
+        FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
         nullptr,
         CREATE_ALWAYS,
-        FILE_ATTRIBUTE_TEMPORARY | FILE_FLAG_DELETE_ON_CLOSE,
+        attrs,
         nullptr);
     if (h == INVALID_HANDLE_VALUE) {
         errno = EIO;

@@ -51,7 +51,10 @@ int make_temporary_inode() noexcept
     // FILE_FLAG_DELETE_ON_CLOSE + _open_osfhandle), which is exactly the
     // "already deleted, no cleanup needed" file this function promises.
     // Reuse it rather than duplicating the CreateFileA/_open_osfhandle dance.
-    int const fd = ::memfd_create("monad", 0);
+    // MONAD_MEMFD_OVERLAPPED requests an overlapped handle: this fd backs
+    // storage_pool's anonymous-inode device, which AsyncIO issues IoRing
+    // reads/writes against just like a named-file device.
+    int const fd = ::memfd_create("monad", MONAD_MEMFD_OVERLAPPED);
     MONAD_ASSERT_PRINTF(fd != -1, "failed due to %s", strerror(errno));
     return fd;
 }

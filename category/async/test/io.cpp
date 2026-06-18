@@ -264,6 +264,11 @@ namespace
         }
     };
 
+#ifndef _WIN32
+    // concurrent_read_io_limit_ > 0 routes through prepare_read_sqe_(), which
+    // is a MONAD_ABORT_PRINTF stub on Windows (see io_windows.cpp) --
+    // AsyncIO is configured with this limit at 0 (disabled) everywhere on
+    // Windows for now.
     TEST(AsyncIO, concurrent_read_io_limit_defers_and_completes_reads)
     {
         monad::async::storage_pool pool(
@@ -311,4 +316,5 @@ namespace
         EXPECT_EQ(completed, NUM_READS);
         EXPECT_EQ(testio.reads_in_flight(), 0u);
     }
+#endif
 }

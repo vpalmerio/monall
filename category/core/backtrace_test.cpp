@@ -36,6 +36,16 @@
 
 namespace
 {
+#ifndef _WIN32
+    // category/core/CMakeLists.txt falls back to Boost::stacktrace_basic on
+    // this mingw toolchain (Boost::stacktrace_backtrace / libbacktrace isn't
+    // available), which captures addresses only -- frame.name()/
+    // source_file()/source_line() are always empty, so this test's string
+    // checks can never pass here. See assert.c's "boost::stacktrace symbol
+    // resolution triggers an access violation" comment for why the
+    // symbol-resolving backend isn't used on Windows. func_a/func_b are only
+    // used by this test, so they're excluded too (avoids -Werror on an
+    // unused static function).
     __attribute__((noinline)) monad::stack_backtrace::ptr
     func_b(std::span<std::byte> const storage)
     {
@@ -103,4 +113,5 @@ namespace
         EXPECT_NE(nullptr, strstr(buffer, "func_b"));
         EXPECT_NE(nullptr, strstr(buffer, "/backtrace_test.cpp"));
     }
+#endif
 }
