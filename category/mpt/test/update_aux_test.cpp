@@ -208,12 +208,14 @@ TEST(update_aux_test, root_offsets_fast_slow)
 
     { // Fail to reopen upon calling rewind_to_match_offsets()
 #ifdef _WIN32
-        // testing::KilledBySignal is unavailable on Windows. abort() in the
-        // Windows UCRT terminates via fast-fail, producing STATUS_STACK_BUFFER_OVERRUN
-        // (0xC0000409), not exit code 3 as older CRT docs suggest.
+        // testing::KilledBySignal is unavailable on Windows. This binary is
+        // deliberately linked against plain msvcrt (not ucrtbase -- see the
+        // hybrid-CRT fix), so abort() takes msvcrt's path: it terminates via
+        // _exit(3), not ucrtbase's fast-fail STATUS_STACK_BUFFER_OVERRUN
+        // (0xC0000409).
         EXPECT_EXIT(
             ({ monad::mpt::UpdateAux{testio, AUX_TEST_HISTORY_LENGTH}; }),
-            ::testing::ExitedWithCode(static_cast<int>(0xC0000409U)),
+            ::testing::ExitedWithCode(3),
             "Detected corruption");
 #else
         EXPECT_EXIT(
