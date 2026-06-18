@@ -72,6 +72,30 @@
 
     #define MAP_FAILED ((void *)-1)
 
+    // Temporary heap-corruption diagnostic for Phase 5 investigation.
+    // GetProcessHeap() is NOT the only heap — ucrtbase malloc/new/_aligned_malloc
+    // use their own separate CRT heap, and other DLLs may add more.
+    // GetProcessHeaps() returns ALL heaps so HeapValidate catches CRT corruption.
+    // Remove (along with all call sites) once the root cause is identified.
+    #define MONAD_WIN_HEAP_CHECK()                                               \
+        do {                                                                     \
+            HANDLE _monad_heaps[64];                                             \
+            DWORD const _monad_n =                                               \
+                GetProcessHeaps(64, _monad_heaps);                               \
+            for (DWORD _monad_i = 0; _monad_i < _monad_n; ++_monad_i) {        \
+                if (!HeapValidate(_monad_heaps[_monad_i], 0, NULL)) {           \
+                    fprintf(                                                     \
+                        stderr,                                                  \
+                        "HEAP[%lu] CORRUPT at %s:%d\n",                         \
+                        _monad_i,                                                \
+                        __FILE__,                                                \
+                        __LINE__);                                               \
+                    fflush(stderr);                                              \
+                    abort();                                                     \
+                }                                                                \
+            }                                                                    \
+        } while (0)
+
     #define MS_SYNC 4
 
     // sys/mman.h: madvise() advice values
@@ -613,8 +637,12 @@ posix_fallocate(int const fd, off_t const offset, off_t const len)
 
 // Positioned read/write that do not disturb the file descriptor's current
 // position, like POSIX pread(2)/pwrite(2); implemented via ReadFile()/
-// WriteFile() with an OVERLAPPED offset, which Win32 honours for synchronous
-// handles too
+// WriteFile() with an OVERLAPPED offset, which Win32 honours for both
+// synchronous (FILE_ATTRIBUTE_NORMAL) and asynchronous (FILE_FLAG_OVERLAPPED)
+// handles. When the handle is overlapped, ReadFile/WriteFile may return
+// ERROR_IO_PENDING; we use a dedicated manual-reset event on the OVERLAPPED
+// struct so that GetOverlappedResult waits on a private event and does not
+// interfere with concurrent IoRing operations that share the same file handle.
 static inline ssize_t
 pread(int const fd, void *const buf, size_t const count, off_t const offset)
 {
@@ -623,18 +651,46 @@ pread(int const fd, void *const buf, size_t const count, off_t const offset)
         errno = EBADF;
         return -1;
     }
-    OVERLAPPED ov = {};
-    ov.Offset = (DWORD)((uint64_t)offset & 0xffffffffu);
-    ov.OffsetHigh = (DWORD)((uint64_t)offset >> 32);
-    DWORD bytes_read = 0;
-    if (!ReadFile(h, buf, (DWORD)count, &bytes_read, &ov)) {
-        if (GetLastError() == ERROR_HANDLE_EOF) {
-            return 0;
-        }
+    // Use a private event so GetOverlappedResult does not spuriously wake on
+    // other IoRing completions that share the same file handle event channel.
+    HANDLE const evt = CreateEventA(NULL, TRUE, FALSE, NULL);
+    if (evt == NULL) {
         errno = EIO;
         return -1;
     }
-    return (ssize_t)bytes_read;
+    OVERLAPPED ov = {};
+    ov.hEvent = evt;
+    ov.Offset = (DWORD)((uint64_t)offset & 0xffffffffu);
+    ov.OffsetHigh = (DWORD)((uint64_t)offset >> 32);
+    DWORD bytes_read = 0;
+    ssize_t ret;
+    if (!ReadFile(h, buf, (DWORD)count, &bytes_read, &ov)) {
+        DWORD const err = GetLastError();
+        if (err == ERROR_HANDLE_EOF) {
+            ret = 0;
+        }
+        else if (err == ERROR_IO_PENDING) {
+            // Overlapped handle: wait for the I/O to complete.
+            if (!GetOverlappedResult(h, &ov, &bytes_read, TRUE)) {
+                ret = (GetLastError() == ERROR_HANDLE_EOF) ? 0 : -1;
+                if (ret < 0) {
+                    errno = EIO;
+                }
+            }
+            else {
+                ret = (ssize_t)bytes_read;
+            }
+        }
+        else {
+            errno = EIO;
+            ret = -1;
+        }
+    }
+    else {
+        ret = (ssize_t)bytes_read;
+    }
+    CloseHandle(evt);
+    return ret;
 }
 
 static inline ssize_t pwrite(
@@ -646,15 +702,40 @@ static inline ssize_t pwrite(
         errno = EBADF;
         return -1;
     }
-    OVERLAPPED ov = {};
-    ov.Offset = (DWORD)((uint64_t)offset & 0xffffffffu);
-    ov.OffsetHigh = (DWORD)((uint64_t)offset >> 32);
-    DWORD bytes_written = 0;
-    if (!WriteFile(h, buf, (DWORD)count, &bytes_written, &ov)) {
+    // Use a private event so GetOverlappedResult does not spuriously wake on
+    // other IoRing completions that share the same file handle event channel.
+    HANDLE const evt = CreateEventA(NULL, TRUE, FALSE, NULL);
+    if (evt == NULL) {
         errno = EIO;
         return -1;
     }
-    return (ssize_t)bytes_written;
+    OVERLAPPED ov = {};
+    ov.hEvent = evt;
+    ov.Offset = (DWORD)((uint64_t)offset & 0xffffffffu);
+    ov.OffsetHigh = (DWORD)((uint64_t)offset >> 32);
+    DWORD bytes_written = 0;
+    ssize_t ret;
+    if (!WriteFile(h, buf, (DWORD)count, &bytes_written, &ov)) {
+        DWORD const err = GetLastError();
+        if (err == ERROR_IO_PENDING) {
+            // Overlapped handle: wait for the I/O to complete.
+            ret = GetOverlappedResult(h, &ov, &bytes_written, TRUE)
+                      ? (ssize_t)bytes_written
+                      : -1;
+            if (ret < 0) {
+                errno = EIO;
+            }
+        }
+        else {
+            errno = EIO;
+            ret = -1;
+        }
+    }
+    else {
+        ret = (ssize_t)bytes_written;
+    }
+    CloseHandle(evt);
+    return ret;
 }
 
 static inline int fsync(int const fd)

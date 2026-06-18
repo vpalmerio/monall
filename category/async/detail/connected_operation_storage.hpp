@@ -176,6 +176,17 @@ namespace detail
                     make_status_code(MONAD_ASYNC_NAMESPACE::sender_errc::
                                          initiation_immediately_completed);
                 if (r.assume_error() == initiation_immediately_completed) {
+                    // Mirror poll_uring_'s h3 delete-after-complete for
+                    // heap-allocated non-read/write operations (e.g.
+                    // read_scatter). On Linux, submit_request_(iovec) always
+                    // returns size_t(-1) so read_scatter never reaches this
+                    // path; on Windows, pread() completes synchronously and
+                    // poll_uring_ is never called, so the cleanup must happen
+                    // here. is_read/is_write ops use the pool allocator (h2
+                    // path in poll_uring_), so they are excluded.
+                    bool const should_self_delete =
+                        this->lifetime_is_managed_internally() &&
+                        !this->is_read() && !this->is_write();
                     [[likely]] if (
                         r.assume_error().domain() ==
                         BOOST_OUTCOME_SYSTEM_ERROR2_NAMESPACE::
@@ -199,10 +210,21 @@ namespace detail
                             },
                             sec.value()->value().payload);
                     }
+                    if (should_self_delete) {
+                        // NOLINTNEXTLINE(clang-analyzer-cplusplus.NewDelete)
+                        delete this;
+                    }
                     return initiation_result::initiation_immediately_completed;
                 }
                 else {
+                    bool const should_self_delete =
+                        this->lifetime_is_managed_internally() &&
+                        !this->is_read() && !this->is_write();
                     this->completed(std::move(r));
+                    if (should_self_delete) {
+                        // NOLINTNEXTLINE(clang-analyzer-cplusplus.NewDelete)
+                        delete this;
+                    }
                     return initiation_result::initiation_failed_told_receiver;
                 }
             }

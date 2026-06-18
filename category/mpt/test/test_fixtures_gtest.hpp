@@ -57,13 +57,19 @@ namespace monad::test
             MONAD_ASYNC_NAMESPACE::working_temporary_directory() /
             "monad_db_test_XXXXXX");
         MONAD_ASSERT(fd != -1);
-        // Cast to off_t (int64_t with _FILE_OFFSET_BITS=64) before multiplying
-        // so the arithmetic uses 64-bit arithmetic rather than silently
-        // overflowing the 32-bit long type on Windows (LLP64: long is 32-bit
-        // even though off_t is widened to 64-bit by _FILE_OFFSET_BITS=64).
+        // Use resize_file() instead of ::ftruncate() for two reasons:
+        // 1. On Windows, MinGW's ftruncate() routes through msvcrt's _chsize_s
+        //    which looks up the fd in msvcrt's CRT fd table.  make_temp_file()
+        //    uses _open_osfhandle (ucrtbase) → ucrtbase's table → EBADF from
+        //    msvcrt.  resize_file() uses _get_osfhandle (ucrtbase) to recover
+        //    the Win32 HANDLE and calls SetEndOfFile directly, bypassing the
+        //    fd-table mismatch entirely.
+        // 2. Using int64_t avoids the 32-bit overflow on Windows LLP64 that
+        //    would silently truncate e.g. 4 GiB to 0 bytes.
         MONAD_ASSERT(
-            -1 != ::ftruncate(
-                      fd, static_cast<off_t>(size_gb) * 1024 * 1024 * 1024));
+            -1
+            != MONAD_ASYNC_NAMESPACE::resize_file(
+                   fd, int64_t(size_gb) * 1024 * 1024 * 1024));
         ::close(fd);
         return filename;
     }

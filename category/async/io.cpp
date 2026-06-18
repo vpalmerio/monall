@@ -391,7 +391,7 @@ void AsyncIO::submit_request_(
     submit_request_sqe_(buffer, chunk_and_offset, uring_data, prio);
 }
 
-void AsyncIO::submit_request_(
+size_t AsyncIO::submit_request_(
     std::span<const struct iovec> const buffers,
     chunk_offset_t const chunk_and_offset, void *const uring_data,
     enum erased_connected_operation::io_priority const prio)
@@ -402,6 +402,7 @@ void AsyncIO::submit_request_(
 
     prepare_read_sqe_(sqe, buffers, chunk_and_offset, uring_data, prio);
     MONAD_ASYNC_IO_URING_RETRYABLE(io_uring_submit(&uring_.get_ring()));
+    return size_t(-1); // always async on Linux
 }
 
 void AsyncIO::submit_request_(

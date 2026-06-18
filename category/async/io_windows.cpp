@@ -14,14 +14,17 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 // Windows AsyncIO implementation built on the Win32 IoRing API
-// (CreateIoRing/BuildIoRing*/SubmitIoRing/PopIoRingCompletion). This covers
-// the Phase 5a "single buffer read/write" subset only. Scatter reads
-// (prepare_read_sqe_/submit_request_ iovec overloads), the
-// concurrent-read-limit deferred-SQE queue, eager-completion draining, and
-// EAGAIN retry-on-reinitiate remain MONAD_ABORT_PRINTF stubs -- none of them
-// are reachable as long as concurrent_read_io_limit_ stays 0 and
-// eager_completions_ stays false, which is how AsyncIO is configured on
-// Windows for now. See the Windows port plan for the follow-up work.
+// (CreateIoRing/BuildIoRing*/SubmitIoRing/PopIoRingCompletion).
+//
+// Single-buffer reads and writes use IoRing (Phase 5a). The iovec scatter-read
+// overload of submit_request_() falls back to synchronous pread() because
+// IoRing has no IORING_OP_READV equivalent and unregistered-buffer refs cause
+// E_INVALIDARG in SubmitIoRing (Phase 5b).
+//
+// The concurrent-read-limit deferred-SQE queue, eager-completion draining, and
+// EAGAIN retry-on-reinitiate remain MONAD_ABORT_PRINTF stubs — none are
+// reachable as long as concurrent_read_io_limit_ stays 0 and
+// eager_completions_ stays false. See the Windows port plan for follow-up.
 
 #include <category/async/io.hpp>
 
@@ -43,6 +46,12 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+
+// MONAD_WIN_HEAP_CHECK() is defined in category/core/compat.h (included
+// transitively via category/async/config.hpp → compat.h).  The macro
+// validates ALL process heaps so it catches corruption in the ucrtbase CRT
+// heap, not just GetProcessHeap().  It is temporary — remove with all call
+// sites once the Phase 5 heap-corruption root cause is found.
 #include <exception>
 #include <filesystem>
 #include <iostream>
@@ -204,6 +213,11 @@ AsyncIO::AsyncIO(class storage_pool &pool, monad::io::Buffers &rwbuf)
         fds.push_back(fd.first);
     }
 
+    // Storage pool opens all file handles with FILE_FLAG_OVERLAPPED so that
+    // Windows IoRing can issue reads and writes to them (IoRing requires
+    // overlapped handles for I/O to be delivered correctly). The pread/pwrite
+    // shims in compat.h are updated to call GetOverlappedResult when WriteFile
+    // or ReadFile returns ERROR_IO_PENDING on overlapped handles.
     std::vector<HANDLE> handles;
     handles.reserve(fds.size());
     for (auto const fd : fds) {
@@ -247,6 +261,7 @@ AsyncIO::AsyncIO(class storage_pool &pool, monad::io::Buffers &rwbuf)
     for (auto &chnk : seq_chunks_) {
         replace_fds_with_iouring_fds(chnk);
     }
+    MONAD_WIN_HEAP_CHECK(); // constructor end: catch corruption introduced during AsyncIO init
 }
 
 AsyncIO::~AsyncIO()
@@ -357,16 +372,62 @@ void AsyncIO::submit_request_(
     submit_request_sqe_(buffer, chunk_and_offset, uring_data, prio);
 }
 
-void AsyncIO::submit_request_(
+size_t AsyncIO::submit_request_(
     std::span<const struct iovec> const buffers,
     chunk_offset_t const chunk_and_offset, void *const uring_data,
     enum erased_connected_operation::io_priority const prio)
 {
-    (void)buffers;
-    (void)chunk_and_offset;
-    (void)uring_data;
+    // Win32 IoRing has no native scatter/gather (no IORING_OP_READV
+    // equivalent). IoRingBufferRefFromPointer (RAW/unregistered kind) is
+    // silently accepted by BuildIoRingReadFile but causes E_INVALIDARG in the
+    // next SubmitIoRing call — so fall back to synchronous pread() for the
+    // single-iovec case.
+    //
+    // Only the single-iovec case is needed: MPT's read_long_update_sender
+    // (the only caller) always passes exactly 1 iovec (one contiguous
+    // _aligned_malloc buffer for node reads larger than READ_BUFFER_SIZE).
+    MONAD_ASSERT_PRINTF(
+        buffers.size() == 1,
+        "scatter reads with %zu iovecs not yet implemented on Windows",
+        buffers.size());
+
+    // pread() does not use uring_data for the I/O itself, but uring_data is
+    // the connected-operation state we must notify later from poll_uring_();
+    // suppress the now-unused prio parameter.
     (void)prio;
-    MONAD_ABORT_PRINTF("scatter reads not yet implemented on Windows");
+
+    auto const &iov = buffers.front();
+    MONAD_ASSERT((chunk_and_offset.offset & (DISK_PAGE_SIZE - 1)) == 0);
+
+    // Chunk fds are created via _open_osfhandle (ucrtbase); pread() from
+    // ucrtbase works on the same fd table — same path dump_fd_to() uses.
+    auto const &ci = seq_chunks_[chunk_and_offset.id];
+    off_t const file_offset = static_cast<off_t>(
+        ci.chunk.read_fd().second + chunk_and_offset.offset);
+    MONAD_WIN_HEAP_CHECK();
+    ssize_t const bytes = ::pread(
+        ci.chunk.read_fd().first, iov.iov_base, iov.iov_len, file_offset);
+    MONAD_ASSERT_PRINTF(
+        bytes >= 0,
+        "pread (long read fd=%d offset=%lld len=%zu) failed: %s",
+        ci.chunk.read_fd().first,
+        (long long)file_offset,
+        iov.iov_len,
+        strerror(errno));
+    MONAD_WIN_HEAP_CHECK();
+
+    // Do NOT notify uring_data->completed() here: that would run the
+    // receiver's continuation reentrantly, inside the call stack that is
+    // still initiating this very read (e.g. trie.cpp's npending-based
+    // deferred finalization assumes a read can never complete before its
+    // initiator returns -- exactly what Linux's genuinely-async io_uring
+    // submission guarantees). Queue the already-known result and report
+    // "pending" instead; poll_uring_() will notify it on its next call,
+    // exactly like a real completion.
+    sync_completed_long_reads_.emplace_back(
+        static_cast<erased_connected_operation *>(uring_data),
+        static_cast<size_t>(bytes < 0 ? 0 : bytes));
+    return size_t(-1);
 }
 
 void AsyncIO::submit_request_(
@@ -377,6 +438,7 @@ void AsyncIO::submit_request_(
     // Win32 IoRing has no ioprio-equivalent SQE field.
     (void)prio;
 
+    MONAD_WIN_HEAP_CHECK();
     MONAD_ASSERT(uring_data != nullptr);
     MONAD_ASSERT(!rwbuf_.is_read_only());
     MONAD_ASSERT((chunk_and_offset.offset & (DISK_PAGE_SIZE - 1)) == 0);
@@ -456,6 +518,39 @@ size_t AsyncIO::poll_uring_(bool const blocking, unsigned const poll_rings_mask)
         "eager completions mode not yet implemented on Windows");
     auto const h = detail::AsyncIO_per_thread_state().enter_completions();
     MONAD_ASSERT(owning_tid_ == get_tl_tid());
+
+    // Drain a synchronously-completed long read before touching the real
+    // rings: it already finished inside submit_request_(iovec...) (Win32
+    // IoRing has no scatter-read op), so there is nothing to wait for here.
+    // Notifying it from this function -- never from submit_request_ itself
+    // -- is what keeps read completions non-reentrant on Windows, matching
+    // io_uring's guarantee that a read can never finish before the call
+    // that submitted it returns.
+    if (!sync_completed_long_reads_.empty() && (poll_rings_mask & 1) == 0) {
+        auto const [state, bytes] = sync_completed_long_reads_.front();
+        sync_completed_long_reads_.pop_front();
+        MONAD_ASSERT(state != nullptr);
+        --records_.inflight_rd;
+        if (capture_io_latencies_) {
+            state->elapsed = std::chrono::steady_clock::now() - state->initiated;
+        }
+        MONAD_WIN_HEAP_CHECK();
+        // Long reads are heap-allocated with plain `new`
+        // (initiate_async_read_update's read_long_update_sender branch), not
+        // the connected_operation_storage_pool_ that read()/write() ops use,
+        // so on completion they are freed with `delete`, never returned to
+        // the pool -- mirrored from the is_read_or_write==false branch below.
+        std::unique_ptr<erased_connected_operation> h3;
+        if (state->lifetime_is_managed_internally()) {
+            h3 = std::unique_ptr<erased_connected_operation>(state);
+        }
+        result<size_t> res = success(bytes);
+        state->completed(std::move(res));
+        MONAD_WIN_HEAP_CHECK();
+        h3.reset();
+        MONAD_WIN_HEAP_CHECK();
+        return 1;
+    }
 
     // SubmitIoRing(ring, 0, 0, ...) submits any queued SQEs without waiting,
     // the IoRing analogue of io_uring_peek_cqe(); SubmitIoRing(ring, 1,
@@ -537,6 +632,7 @@ size_t AsyncIO::poll_uring_(bool const blocking, unsigned const poll_rings_mask)
     }
 #endif
 
+    MONAD_WIN_HEAP_CHECK();
     erased_connected_operation_unique_ptr_type h2;
     std::unique_ptr<erased_connected_operation> h3;
     if (state->lifetime_is_managed_internally()) {
@@ -548,6 +644,13 @@ size_t AsyncIO::poll_uring_(bool const blocking, unsigned const poll_rings_mask)
         }
     }
     state->completed(std::move(res));
+    MONAD_WIN_HEAP_CHECK();
+    // Explicitly destruct h2/h3 before the final check so heap corruption
+    // from the pool free or operator delete is caught here rather than
+    // silently after function return.
+    h2.reset();
+    h3.reset();
+    MONAD_WIN_HEAP_CHECK();
     return 1;
 }
 

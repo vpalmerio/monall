@@ -208,11 +208,12 @@ TEST(update_aux_test, root_offsets_fast_slow)
 
     { // Fail to reopen upon calling rewind_to_match_offsets()
 #ifdef _WIN32
-        // testing::KilledBySignal is unavailable on Windows (gtest gates it
-        // on !GTEST_OS_WINDOWS); abort() exits the process with code 3 there.
+        // testing::KilledBySignal is unavailable on Windows. abort() in the
+        // Windows UCRT terminates via fast-fail, producing STATUS_STACK_BUFFER_OVERRUN
+        // (0xC0000409), not exit code 3 as older CRT docs suggest.
         EXPECT_EXIT(
             ({ monad::mpt::UpdateAux{testio, AUX_TEST_HISTORY_LENGTH}; }),
-            ::testing::ExitedWithCode(3),
+            ::testing::ExitedWithCode(static_cast<int>(0xC0000409U)),
             "Detected corruption");
 #else
         EXPECT_EXIT(

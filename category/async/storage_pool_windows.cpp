@@ -664,13 +664,16 @@ storage_pool::storage_pool(
         // its separate fd table → EBADF on the msvcrt fd.  Use CreateFileA +
         // _open_osfhandle (ucrtbase) instead, matching compat.h's memfd_create.
         std::string const path_str = path.string();
+        // FILE_FLAG_OVERLAPPED is required so Windows IoRing can issue reads
+        // and writes to this handle. The pread/pwrite shims in compat.h call
+        // GetOverlappedResult to handle ERROR_IO_PENDING on overlapped handles.
         HANDLE const h_ro = CreateFileA(
             path_str.c_str(),
             GENERIC_READ,
             FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
             nullptr,
             OPEN_EXISTING,
-            FILE_ATTRIBUTE_NORMAL,
+            FILE_ATTRIBUTE_NORMAL | FILE_FLAG_OVERLAPPED,
             nullptr);
         MONAD_ASSERT_PRINTF(
             h_ro != INVALID_HANDLE_VALUE,
@@ -705,13 +708,16 @@ storage_pool::storage_pool(
         bool const read_only =
             flags.open_read_only || flags.open_read_only_allow_dirty;
         std::string const source_str = source.string();
+        // FILE_FLAG_OVERLAPPED is required so Windows IoRing can issue reads
+        // and writes to this handle. The pread/pwrite shims in compat.h call
+        // GetOverlappedResult to handle ERROR_IO_PENDING on overlapped handles.
         HANDLE const h_src = CreateFileA(
             source_str.c_str(),
             read_only ? GENERIC_READ : (GENERIC_READ | GENERIC_WRITE),
             FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
             nullptr,
             OPEN_EXISTING,
-            FILE_ATTRIBUTE_NORMAL,
+            FILE_ATTRIBUTE_NORMAL | FILE_FLAG_OVERLAPPED,
             nullptr);
         MONAD_ASSERT_PRINTF(
             h_src != INVALID_HANDLE_VALUE,

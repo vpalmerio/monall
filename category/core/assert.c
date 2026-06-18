@@ -70,8 +70,11 @@ void monad_assertion_failed(
     // This NEEDS to remain async signal safe!
     char buffer[16384];
     ssize_t written;
-    monad_stack_backtrace_capture_and_print(
-        buffer, sizeof(buffer), STDERR_FILENO, 3, true);
+
+    // Write the assertion message BEFORE the backtrace so it is always visible.
+    // On Windows, boost::stacktrace symbol resolution triggers an access
+    // violation (exit code STATUS_ACCESS_VIOLATION = 0xC0000005), killing the
+    // process before the message would otherwise be written.
     if (expr != nullptr) {
         written = snprintf(
             buffer,
@@ -111,5 +114,9 @@ void monad_assertion_failed(
     if (write(STDERR_FILENO, buffer, (unsigned)written) == -1) {
         abort(); // Needed because of -Werror=unused-result
     }
+    // Attempt the backtrace after the message; on Windows this may crash due
+    // to boost::stacktrace symbol resolution, but the message is already out.
+    monad_stack_backtrace_capture_and_print(
+        buffer, sizeof(buffer), STDERR_FILENO, 3, true);
     abort();
 }

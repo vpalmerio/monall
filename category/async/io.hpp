@@ -105,10 +105,32 @@ private:
     // concurrent reads was reached. Each entry is a fully prepared SQE.
     std::deque<struct io_uring_sqe> concurrent_read_ios_pending_;
 
+    // Windows only: long (scatter) reads complete synchronously via pread()
+    // inside submit_request_(iovec...) because Win32 IoRing has no
+    // scatter-read op. Their completion must still be notified from
+    // poll_uring_(), never from within the initiating call, otherwise the
+    // receiver's continuation runs reentrantly -- before the caller that
+    // kicked off the read has finished using the state it passed in (e.g.
+    // trie.cpp's npending-based deferred finalization assumes a read can
+    // never complete before its initiator returns). This queue carries the
+    // already-known byte count from submission time to the next
+    // poll_uring_() call, which notifies it exactly like a real completion.
+    // Always present (not #ifdef _WIN32) so AsyncIO's layout, and the
+    // static_assert below, do not depend on platform.
+    std::deque<std::pair<erased_connected_operation *, size_t>>
+        sync_completed_long_reads_;
+
     void submit_request_(
         std::span<std::byte> buffer, chunk_offset_t chunk_and_offset,
         void *uring_data, enum erased_connected_operation::io_priority prio);
-    void submit_request_(
+    // Always returns size_t(-1) (never completes immediately). On Windows,
+    // the underlying pread() for a long/scatter read does complete
+    // synchronously (Win32 IoRing has no scatter-read op), but its
+    // completion is queued in sync_completed_long_reads_ and notified later
+    // from poll_uring_() rather than returned here -- so callers see the
+    // same "submitted, completes later" contract on both platforms, and a
+    // read can never finish before the call that initiated it returns.
+    size_t submit_request_(
         std::span<const struct iovec> buffers, chunk_offset_t chunk_and_offset,
         void *uring_data, enum erased_connected_operation::io_priority prio);
     void submit_request_(
@@ -369,7 +391,14 @@ public:
             return size_t(-1); // we never complete immediately
         }
 
-        submit_request_(buffers, offset, uring_data, uring_data->io_priority());
+        size_t const bytes =
+            submit_request_(buffers, offset, uring_data, uring_data->io_priority());
+        if (bytes != size_t(-1)) {
+            // Completed synchronously (Windows long-read path): the caller
+            // already has the result, no async operation is in flight, so
+            // skip account_read_() and return the byte count directly.
+            return bytes;
+        }
         account_read_(iov_length(buffers));
         return size_t(-1); // we never complete immediately
     }
@@ -657,7 +686,7 @@ private:
 using erased_connected_operation_ptr =
     AsyncIO::erased_connected_operation_unique_ptr_type;
 
-static_assert(sizeof(AsyncIO) == 272);
+static_assert(sizeof(AsyncIO) == 352);
 static_assert(alignof(AsyncIO) == 8);
 
 namespace detail

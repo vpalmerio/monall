@@ -839,6 +839,10 @@ TEST_F(OnDiskDbWithFileFixture, upsert_but_not_write_root)
 TEST(DbTest, history_length_adjustment_never_under_min)
 {
     auto const dbname = create_temp_file(4);
+    // Use scope_exit so the file is cleaned up even if the test aborts,
+    // preventing accumulation of stale 4 GiB temp files on Windows.
+    auto const undb = monad::make_scope_exit(
+        [&]() noexcept { std::filesystem::remove(dbname); });
     OnDiskDbConfig const config{
         .compaction = true,
         .sq_thread_cpu{std::nullopt},
@@ -878,8 +882,6 @@ TEST(DbTest, history_length_adjustment_never_under_min)
     // Db stops adjusting down history length at MIN_HISTORY_LENGTH
     EXPECT_GT(test::DbAccessor::aux(db).disk_usage(), disk_usage_before);
     EXPECT_EQ(db.get_history_length(), MIN_HISTORY_LENGTH);
-
-    remove(dbname);
 }
 
 TEST_F(OnDiskDbWithFileFixture, read_only_db_traverse_as_version_expire)

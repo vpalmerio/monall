@@ -68,6 +68,44 @@ extern std::filesystem::path const &working_temporary_directory();
 //! after
 extern int make_temporary_inode() noexcept;
 
+//! Resizes a file (already open for writing) to exactly `size_bytes`.
+//! Returns 0 on success, -1 on failure (with errno set).
+//!
+//! On Linux this is a thin wrapper around ftruncate().
+//!
+//! On Windows, MinGW's ftruncate() routes through libmingwex.a → msvcrt's
+//! _chsize_s(), which looks up the fd in msvcrt's CRT fd table.  Fds
+//! opened via _open_osfhandle (ucrtbase) live in ucrtbase's *separate*
+//! table and are invisible to msvcrt → EBADF.  Using _get_osfhandle()
+//! (ucrtbase) to retrieve the underlying Win32 HANDLE and then calling
+//! SetFilePointerEx + SetEndOfFile bypasses both the fd-table mismatch and
+//! the 32-bit off_t overflow that would silently truncate to 0 on LLP64.
+inline int resize_file(int const fd, int64_t const size_bytes)
+{
+#ifdef _WIN32
+    // _get_osfhandle is from ucrtbase, so it finds the fd that
+    // _open_osfhandle placed in ucrtbase's table.
+    HANDLE const h = reinterpret_cast<HANDLE>(_get_osfhandle(fd));
+    if (h == INVALID_HANDLE_VALUE) {
+        errno = EBADF;
+        return -1;
+    }
+    LARGE_INTEGER li;
+    li.QuadPart = size_bytes;
+    if (!SetFilePointerEx(h, li, nullptr, FILE_BEGIN)) {
+        errno = EIO;
+        return -1;
+    }
+    if (!SetEndOfFile(h)) {
+        errno = EIO;
+        return -1;
+    }
+    return 0;
+#else
+    return ::ftruncate(fd, static_cast<off_t>(size_bytes));
+#endif
+}
+
 //! Creates a temporary file in the directory of `template_path` and returns
 //! the open fd (guaranteed in ucrtbase's CRT fd table on Windows) plus the
 //! actual file path.
