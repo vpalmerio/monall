@@ -465,12 +465,19 @@ void AsyncIO::submit_request_(
     auto const buf_offset = static_cast<UINT32>(
         reinterpret_cast<unsigned char const *>(buffer.data()) -
         rwbuf_.get_write_buffer(0));
-    // When the write ring is shared with the read ring, drain preceding
-    // reads first so a write can never be observed to complete "before" a
-    // read it logically followed (mirrors IOSQE_IO_DRAIN on Linux).
+    // Mirror Linux's io.cpp: drain preceding ops only when writing to a
+    // segregated write ring (wr_uring_ != nullptr). Linux's io_uring SQE
+    // gets IOSQE_IO_DRAIN exactly in that case (`wr_ring !=
+    // &uring_.get_ring()`), forcing each write on that ring to wait for all
+    // earlier writes on the same ring to finish before it starts -- without
+    // it, two writes issued back-to-back (e.g. trie.cpp's recursive
+    // node-writer continuations) can complete out of submission order,
+    // which AsyncIO.sqe_exhaustion_does_not_reorder_writes caught. A
+    // *shared* ring isn't drained on Linux either, so this doesn't drain it
+    // here.
     IORING_SQE_FLAGS const sqe_flags = (wr_uring_ != nullptr)
-                                            ? IOSQE_FLAGS_NONE
-                                            : IOSQE_FLAGS_DRAIN_PRECEDING_OPS;
+                                            ? IOSQE_FLAGS_DRAIN_PRECEDING_OPS
+                                            : IOSQE_FLAGS_NONE;
 
     HRESULT hr = BuildIoRingWriteFile(
         write_ring.get_handle(),

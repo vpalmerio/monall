@@ -25,10 +25,12 @@
 #include <ankerl/unordered_dense.h>
 #include <blake3.h>
 
+#include <algorithm>
 #include <fcntl.h>
 #include <filesystem>
 #include <format>
 #include <fstream>
+#include <limits>
 
 #ifdef _WIN32
     #include <category/core/compat.h>
@@ -39,10 +41,118 @@
 
 MONAD_ANONYMOUS_NAMESPACE_BEGIN
 
+#ifdef _WIN32
+// monad_db_snapshot_write_filesystem() keeps every shard's 4 files (8
+// streams: data + checksum) open simultaneously until the whole context is
+// destroyed, for up to MONAD_SNAPSHOT_SHARDS (256) shards -- up to 2048
+// concurrently open streams. std::ofstream is backed by the CRT's FILE*
+// table, and msvcrt hard-caps _setmaxstdio() at 2048 regardless of what's
+// requested (verified: every value above 2048 fails with EINVAL) -- not
+// enough headroom once stdin/stdout/stderr and other open files are
+// counted. Raw HANDLEs are bounded only by the OS per-process handle limit
+// (~16 million), which is what Linux's open-file accounting effectively
+// gives this code for free, so this mirrors std::ofstream's interface for
+// the operations used below (open/is_open/write/good/operator<<) rather
+// than touching any call site.
+struct WinFileStream
+{
+    HANDLE h{INVALID_HANDLE_VALUE};
+    bool good_{true};
+
+    WinFileStream() noexcept = default;
+    WinFileStream(WinFileStream const &) = delete;
+    WinFileStream &operator=(WinFileStream const &) = delete;
+
+    WinFileStream(WinFileStream &&other) noexcept
+        : h(other.h)
+        , good_(other.good_)
+    {
+        other.h = INVALID_HANDLE_VALUE;
+    }
+
+    WinFileStream &operator=(WinFileStream &&other) noexcept
+    {
+        if (this != &other) {
+            close_();
+            h = other.h;
+            good_ = other.good_;
+            other.h = INVALID_HANDLE_VALUE;
+        }
+        return *this;
+    }
+
+    ~WinFileStream()
+    {
+        close_();
+    }
+
+    void close_() noexcept
+    {
+        if (h != INVALID_HANDLE_VALUE) {
+            CloseHandle(h);
+            h = INVALID_HANDLE_VALUE;
+        }
+    }
+
+    void open(
+        std::filesystem::path const &path,
+        std::ios::openmode const = std::ios::out)
+    {
+        h = CreateFileA(
+            path.string().c_str(),
+            GENERIC_WRITE,
+            FILE_SHARE_READ,
+            nullptr,
+            CREATE_ALWAYS,
+            FILE_ATTRIBUTE_NORMAL,
+            nullptr);
+    }
+
+    bool is_open() const noexcept
+    {
+        return h != INVALID_HANDLE_VALUE;
+    }
+
+    bool good() const noexcept
+    {
+        return good_;
+    }
+
+    void write(char const *const data, std::streamsize const len)
+    {
+        size_t written_total = 0;
+        auto const total = static_cast<size_t>(len);
+        while (written_total < total) {
+            DWORD const to_write = static_cast<DWORD>(std::min<size_t>(
+                total - written_total,
+                size_t{std::numeric_limits<DWORD>::max()}));
+            DWORD written = 0;
+            if (!WriteFile(
+                    h, data + written_total, to_write, &written, nullptr)) {
+                good_ = false;
+                return;
+            }
+            written_total += written;
+        }
+    }
+
+    WinFileStream &operator<<(std::string const &s)
+    {
+        write(s.data(), static_cast<std::streamsize>(s.size()));
+        return *this;
+    }
+};
+#endif
+
 struct SnapshotShardStream
 {
+#ifdef _WIN32
+    WinFileStream foutput;
+    WinFileStream fchecksum;
+#else
     std::ofstream foutput;
     std::ofstream fchecksum;
+#endif
     blake3_hasher hasher;
 };
 
