@@ -191,6 +191,21 @@ endif ()
 set(OPTIONAL_BUILD_TESTS OFF)
 set(OLD_CMAKE_POLICY_VERSION_MINIMUM "${CMAKE_POLICY_VERSION_MINIMUM}")
 set(CMAKE_POLICY_VERSION_MINIMUM "3.5")
+if(WIN32)
+  # silkpre and its nested libff dependency both do
+  # find_library(GMP_LIBRARY gmp) and classify the result as SHARED if it
+  # matches CMAKE_SHARED_LIBRARY_SUFFIX (".dll"). On mingw this call
+  # resolves to libgmp.dll.a (a static-format import library for the
+  # shared DLL), which still matches ".dll" and gets misclassified.
+  # Temporarily restricting the search to ".a" makes find_library() resolve
+  # the real static archive instead; since GMP_LIBRARY becomes a cached
+  # variable, both subdirectories' find_library(GMP_LIBRARY gmp) calls
+  # below short-circuit on this value instead of searching again.
+  set(_OLD_CMAKE_FIND_LIBRARY_SUFFIXES "${CMAKE_FIND_LIBRARY_SUFFIXES}")
+  set(CMAKE_FIND_LIBRARY_SUFFIXES ".a")
+  find_library(GMP_LIBRARY gmp)
+  set(CMAKE_FIND_LIBRARY_SUFFIXES "${_OLD_CMAKE_FIND_LIBRARY_SUFFIXES}")
+endif()
 add_subdirectory(third_party/silkpre)
 set(CMAKE_POLICY_VERSION_MINIMUM "${OLD_CMAKE_POLICY_VERSION_MINIMUM}")
 # undo the injection of ccache silkpre/ff does
